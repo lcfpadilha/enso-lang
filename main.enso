@@ -1,0 +1,9 @@
+struct Sentiment { mood: String, score: Int }
+
+ai fn analyze(text: String) -> Sentiment {
+    instruction: "Analyze sentiment."
+    model: "gemini-flash-latest"
+}
+
+print("Ensō Initialized.");
+print(analyze("very nice!"));

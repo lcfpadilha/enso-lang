@@ -1,0 +1,5 @@
+{
+  "gpt-4o": { "type": "openai", "cost_in": 2.50, "cost_out": 10.00 },
+  "gemini-flash-latest": { "type": "gemini", "cost_in": 3.50, "cost_out": 10.50 },
+  "llama-3-local": { "type": "local", "cost_in": 0.0, "cost_out": 0.0 }
+}
