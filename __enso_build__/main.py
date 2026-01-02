@@ -177,19 +177,10 @@ def analyze(text: str):
     return agent.run(str(inputs), Sentiment)
 
 
-print("Running Analysis...")
-
-result = analyze("it was good, but some of the things didn't work, but I recommend!")
-
-print(result.value.mood)
-
-print(result.value.score)
-
 def test_AI_Mocked_Positive_Flow():
     pass
     MOCKS['analyze'] = Sentiment(mood="Positive", score=99)
     result = analyze("I hate this")
-    print(result.value.mood)
     assert result.value.score == 99
     assert result.value.mood == "Positive"
 

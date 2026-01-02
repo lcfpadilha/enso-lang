@@ -1,0 +1,10 @@
+import "example.enso";
+
+test "Mocked Positive Flow" {
+    mock analyze => Sentiment { mood: "Positive", score: 99 };
+
+    let result = analyze("I hate this");
+
+    assert result.value.score == 99;
+    assert result.value.mood == "Positive";
+}

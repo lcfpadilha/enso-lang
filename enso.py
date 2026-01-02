@@ -9,19 +9,13 @@ BUILD_DIR = "__enso_build__"
 CONFIG_FILE = "models.json"
 
 def cmd_update(args):
-    print(f"⬇️  Fetching latest model definitions...")
-    # Simulated Registry
     latest_models = {
-        "gpt-4o":        {"type": "openai", "cost_in": 2.50, "cost_out": 10.00},
-        "gpt-4o-mini":   {"type": "openai", "cost_in": 0.15, "cost_out": 0.60},
-        "gemini-1.5-pro":{"type": "gemini", "cost_in": 3.50, "cost_out": 10.50},
-        "llama-3-local": {"type": "local",  "cost_in": 0.0,  "cost_out": 0.0}
+        "gpt-4o": { "type": "openai", "cost_in": 2.50, "cost_out": 10.00 },
+        "gemini-flash-latest": { "type": "gemini", "cost_in": 3.50, "cost_out": 10.50 },
+        "llama-3-local": { "type": "local", "cost_in": 0.0, "cost_out": 0.0 }
     }
-    
-    # Save to local dir for MVP, or ~/.enso/ for Prod
     with open(CONFIG_FILE, "w") as f:
         json.dump(latest_models, f, indent=2)
-        
     print(f"✅ Updated {CONFIG_FILE} with {len(latest_models)} models.")
 
 def build(filepath):
@@ -30,14 +24,11 @@ def build(filepath):
         sys.exit(1)
         
     if not os.path.exists(CONFIG_FILE):
-        print(f"⚠️  Config missing. Auto-running 'enso update'...")
         cmd_update(None)
 
-    with open(filepath, 'r') as f:
-        source_code = f.read()
-
+    # Compile from file path directly (handles imports)
     try:
-        python_code = compile_source(source_code)
+        python_code = compile_source(filepath)
     except Exception as e:
         print(f"❌ Compilation Failed:\n{e}")
         sys.exit(1)
@@ -63,26 +54,12 @@ def cmd_test(args):
     subprocess.call([sys.executable, target_file])
 
 def cmd_init(args):
-    filename = "main.enso"
-    code = """struct Sentiment { mood: String, score: Int }
-
-ai fn analyze(text: String) -> Sentiment {
-    instruction: "Analyze sentiment.",
-    model: "gpt-4o"
-}
-
-test "Mocked Logic" {
-    mock analyze => Sentiment { mood: "Happy", score: 10 };
-    let res = analyze("foo");
-    assert res.value.score == 10;
-}
-
-print("Ensō Initialized.");
-print(analyze("Hello World"));
-"""
-    with open(filename, "w") as f:
-        f.write(code)
-    print(f"Created {filename}")
+    print("Initializing project...")
+    with open("main.enso", "w") as f:
+        f.write('import "structs.enso";\n\nprint("Hello Enso");')
+    with open("structs.enso", "w") as f:
+        f.write('struct User { name: String }')
+    print("Created main.enso and structs.enso")
 
 def main():
     parser = argparse.ArgumentParser(description="Ensō CLI")

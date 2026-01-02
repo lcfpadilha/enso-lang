@@ -13,12 +13,3 @@ let result = analyze("it was good, but some of the things didn't work, but I rec
 
 print(result.value.mood);
 print(result.value.score);
-
-test "Mocked Positive Flow" {
-    mock analyze => Sentiment { mood: "Positive", score: 99 };
-
-    let result = analyze("I hate this");
-
-    assert result.value.score == 99;
-    assert result.value.mood == "Positive";
-}

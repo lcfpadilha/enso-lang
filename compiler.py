@@ -1,11 +1,52 @@
 import sys
+import os
+import re
 from lark import Lark, Transformer
+
+# ==========================================
+# 0. THE BUNDLER (New Feature)
+# ==========================================
+def bundle(file_path, visited=None):
+    """
+    Recursively replaces 'import "lib.enso";' with the content of that file.
+    Acts like a C pre-processor.
+    """
+    if visited is None: visited = set()
+    
+    # Resolve absolute path to handle nested imports correctly
+    abs_path = os.path.abspath(file_path)
+    
+    if abs_path in visited:
+        return f"// Cycle detected: {file_path} skipped"
+    visited.add(abs_path)
+
+    if not os.path.exists(abs_path):
+        raise FileNotFoundError(f"Import not found: {abs_path}")
+
+    with open(abs_path, 'r') as f:
+        code = f.read()
+
+    base_dir = os.path.dirname(abs_path)
+
+    def replacer(match):
+        # Extract filename from: import "foo.enso";
+        rel_path = match.group(1)
+        full_path = os.path.join(base_dir, rel_path)
+        return f"\n{bundle(full_path, visited)}\n"
+
+    # Regex to find: import "anything";
+    # We remove the line and replace it with the file content
+    bundled_code = re.sub(r'import\s+"([^"]+)"\s*;', replacer, code)
+    
+    return bundled_code
 
 # ==========================================
 # 1. THE GRAMMAR (The Laws of Ensō)
 # ==========================================
 enso_grammar = r"""
-    start: (struct_def | ai_fn_def | test_def | statement)*
+    start: (import_def | struct_def | ai_fn_def | test_def | statement)*
+
+    import_def: "import" STRING ";"
 
     // --- Definitions ---
     struct_def: "struct" NAME "{" field_def* "}"
@@ -323,6 +364,11 @@ def {name}({arg_str}):
     def NUMBER(self, t): return str(t)
     def CONFIG_KEY(self, t): return str(t)
     def OPERATOR(self, t): return str(t)
+    # We return an empty string because the Bundler has already
+    # pasted the code. If we didn't use a bundler, we would generate
+    # Python 'import' statements here.
+    def import_def(self, args):
+        return ""
 
 # ==========================================
 # 4. INTROSPECTION
@@ -363,9 +409,12 @@ class SchemaExtractor(Transformer):
     def mock_stmt(self, t): return None
     def assertion(self, t): return None
 
-def compile_source(source_code):
+def compile_source(file_path):
+    # STEP 1: BUNDLE IMPORTS
+    full_source = bundle(file_path)
+    # STEP 2: PARSE BUNDLED CODE
     parser = Lark(enso_grammar, parser='lalr', transformer=EnsoTransformer())
-    return parser.parse(source_code)
+    return parser.parse(full_source)
 
 def analyze_source(source_code):
     parser = Lark(enso_grammar, parser='lalr', transformer=SchemaExtractor())
