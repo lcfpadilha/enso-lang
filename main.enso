@@ -1,9 +1,15 @@
-struct Sentiment { mood: String, score: Int }
+struct Sentiment {
+    mood: String
+    score: Int
+}
 
 ai fn analyze(text: String) -> Sentiment {
-    instruction: "Analyze sentiment."
+    instruction: "Analyze the sentiment."
     model: "gemini-flash-latest"
 }
 
-print("Ensō Initialized.");
-print(analyze("very nice!"));
+print("Running Analysis...");
+let result = analyze("I completely love this new programming language!");
+
+print(result.value.mood);
+print(result.value.score);
