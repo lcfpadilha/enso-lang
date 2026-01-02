@@ -29,7 +29,14 @@ enso_grammar = r"""
     validate_block: "validate" "(" NAME ")" "{" validation_rule* "}"
     validation_rule: expr "=>" STRING [","]
 
-    type_expr: NAME | "List" "<" type_expr ">" | "Enum" "<" (STRING [","])* ">"
+    // --- TYPE EXPRESSIONS (FIXED) ---
+    // We strictly separate the rules so the Transformer knows which branch was hit
+    type_expr: list_type | enum_type | simple_type
+    
+    simple_type: NAME
+    list_type: "List" "<" type_expr ">"
+    enum_type: "Enum" "<" (STRING [","])* ">"
+
     arg_list: arg_def ("," arg_def)*
     arg_def: NAME ":" type_expr
 
@@ -47,7 +54,6 @@ enso_grammar = r"""
     call_expr: NAME "(" args_call? ")"
     args_call: expr ("," expr)*
     
-    // FIXED: Allow Chained Access (result.value.mood)
     prop_access: NAME ("." NAME)+
 
     binary_expr: expr OPERATOR expr
@@ -61,13 +67,13 @@ enso_grammar = r"""
 """
 
 # ==========================================
-# 2. THE REAL RUNTIME (With API Calls)
+# 2. THE RUNTIME PREAMBLE
 # ==========================================
 RUNTIME_PREAMBLE = """
 import os, json, time, sys
 import requests
 from typing import Any, List, Dict, Literal 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from abc import ABC, abstractmethod
 
 MOCKS = {}
@@ -97,20 +103,15 @@ class OpenAIDriver(LLMDriver):
     def complete(self, model: str, system: str, user: str, schema: Dict) -> str:
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key: raise ValueError("Missing OPENAI_API_KEY")
-        
-        url = "[https://api.openai.com/v1/chat/completions](https://api.openai.com/v1/chat/completions)"
+        url = "https://api.openai.com/v1/chat/completions"
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-        
-        # Force JSON via prompt + mode
         system_prompt = f"{system}\\n\\nYou MUST return valid JSON matching this schema:\\n{json.dumps(schema)}"
-        
         payload = {
             "model": model,
             "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user}],
             "response_format": {"type": "json_object"},
             "temperature": 0.1
         }
-        
         try:
             resp = requests.post(url, json=payload, headers=headers)
             resp.raise_for_status()
@@ -123,9 +124,10 @@ class GeminiDriver(LLMDriver):
     def complete(self, model: str, system: str, user: str, schema: Dict) -> str:
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key: raise ValueError("Missing GEMINI_API_KEY")
+        api_key = api_key.strip()
+        clean_model = model.replace('"', '').replace("'", "").strip()
         
-        # Call Google API
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent?key={api_key}"
         
         payload = {
             "contents": [{"parts": [{"text": f"System: {system}\\nUser: {user}"}]}],
@@ -134,12 +136,13 @@ class GeminiDriver(LLMDriver):
                 "response_schema": schema
             }
         }
-        
+
         try:
             resp = requests.post(url, json=payload)
             resp.raise_for_status()
             return resp.json()['candidates'][0]['content']['parts'][0]['text']
         except Exception as e:
+            print(f"    [Error] Gemini Connection Failed: {url}")
             if 'resp' in locals(): print(f"    [Details] {resp.text}")
             raise e
 
@@ -176,11 +179,11 @@ class EnsoAgent:
         self.driver = get_driver(self.spec.get('type', 'openai'))
 
     def _clean_json(self, raw: str) -> str:
-        # Robust cleaner for Markdown/Backticks
         raw = raw.strip()
         if raw.startswith("```json"): raw = raw[7:]
         elif raw.startswith("```"): raw = raw[3:]
         if raw.endswith("```"): raw = raw[:-3]
+        if raw.startswith("System:"): raw = raw.replace("System:", "", 1)
         return raw.strip()
 
     def run(self, input_text, response_model):
@@ -188,44 +191,48 @@ class EnsoAgent:
             print(f"    [Mock] Serving response for '{self.name}'")
             return Probabilistic(value=MOCKS[self.name], confidence=1.0, cost=0.0, model_used="MOCK")
 
-        print(f"\\n[Enso] Agent '{self.name}' -> {self.model} ({self.spec.get('type')})...")
+        print(f"\\n[Enso] Agent '{self.name}' -> {self.model}...")
         schema = response_model.model_json_schema()
-        
+
         start_t = time.time()
-        # 1. Call API
         raw_json = self.driver.complete(self.model, self.instruction, input_text, schema)
         latency = time.time() - start_t
         
-        # 2. Clean Response
         clean_json = self._clean_json(raw_json)
-        
         in_tok = len(self.instruction)//4 + len(input_text)//4
         out_tok = len(clean_json)//4
         cost = (in_tok/1e6 * self.spec.get('cost_in', 0)) + (out_tok/1e6 * self.spec.get('cost_out', 0))
 
         try:
-            # 3. Parse & Validate
             data = json.loads(clean_json)
             val = response_model(**data)
             print(f"    [Meta] Cost: ${round(cost, 6)} | Latency: {round(latency, 2)}s")
             return Probabilistic(value=val, confidence=0.99, cost=cost, model_used=self.model)
         except Exception as e:
             print(f"    [Parse Error] {e}")
-            print(f"    [Raw Output] {raw_json[:100]}...") # Print first 100 chars
+            print(f"    [Raw Output] {raw_json[:200]}...") 
             return Probabilistic(value=None, confidence=0.0, cost=0.0, model_used=self.model)
 
+# --- Test Runner ---
 def run_tests(include_ai=False):
     print(f"\\n🧪 Running Tests (Include AI: {include_ai})...")
     g = globals()
     tests = [name for name in g if name.startswith("test_")]
-    passed, skipped = 0, 0
+    passed = 0
+    skipped = 0
     for t in tests:
-        if "_AI_" in t and not include_ai:
-            skipped += 1; continue
+        is_ai_test = "_AI_" in t
+        print(t)
+        if is_ai_test and not include_ai:
+            skipped += 1
+            continue
         MOCKS.clear()
         try:
-            g[t](); print(f"✅ PASS: {t}"); passed += 1
-        except Exception as e: print(f"❌ FAIL: {t} ({e})")
+            g[t]()
+            print(f"✅ PASS: {t}")
+            passed += 1
+        except Exception as e:
+            print(f"❌ FAIL: {t} ({e})")
     print(f"\\nSummary: {passed} Passed, {skipped} Skipped.")
 """
 
@@ -246,10 +253,13 @@ class EnsoTransformer(Transformer):
         instr = body['instruction']
         model = body.get('model', '"gpt-4o"')
         name = args[0]
+        
         return f"""
 def {name}({arg_str}):
     agent = EnsoAgent(name="{name}", instruction={instr}, model={model})
-    return agent.run(str(locals()), {ret})
+    # Filter variables to only send arguments, not the agent itself
+    inputs = {{k:v for k,v in locals().items() if k != 'agent' and not k.startswith('__')}}
+    return agent.run(str(inputs), {ret})
 """
 
     def ai_body(self, args):
@@ -284,7 +294,6 @@ def {name}({arg_str}):
     def statement(self, args): return args[0]
     def print_stmt(self, args): return f"print({args[0]})"
     def let_stmt(self, args): return f"{args[0]} = {args[1]}"
-
     def prop_access(self, args): return ".".join(args)
 
     def instruction_stmt(self, args): return {"instruction": args[0]}
@@ -292,15 +301,20 @@ def {name}({arg_str}):
     def arg_list(self, args): return ", ".join(args)
     def arg_def(self, args): return f"{args[0]}: {args[1]}"
     
-    def type_expr(self, args):
-        if len(args) == 1: 
-            m = {"String":"str", "Int":"int", "Float":"float"}
-            return m.get(args[0], args[0])
-        if args[0] == "List": return f"List[{args[1]}]"
-        if args[0] == "Enum":
-            options = ", ".join(args[1:])
-            return f"Literal[{options}]"
-            
+    def type_expr(self, args): return args[0] # Pass-through for the one chosen child
+
+    def simple_type(self, args):
+        arg0 = str(args[0])
+        m = {"String":"str", "Int":"int", "Float":"float"}
+        return m.get(arg0, arg0)
+
+    def list_type(self, args):
+        return f"List[{args[0]}]"
+
+    def enum_type(self, args):
+        options = ", ".join([str(x) for x in args])
+        return f"Literal[{options}]"
+
     def struct_init(self, args): return f"{args[0]}({', '.join(args[1:])})"
     def field_init(self, args): return f"{args[0]}={args[1]}"
     def binary_expr(self, args): return f"{args[0]} {args[1]} {args[2]}"
@@ -311,7 +325,7 @@ def {name}({arg_str}):
     def OPERATOR(self, t): return str(t)
 
 # ==========================================
-# 4. INTROSPECTION (For CLI Tools)
+# 4. INTROSPECTION
 # ==========================================
 class SchemaExtractor(Transformer):
     def start(self, items): return [i for i in items if isinstance(i, dict) and i.get('type') == 'function']
@@ -324,8 +338,6 @@ class SchemaExtractor(Transformer):
                 p = part.split(":")
                 arg_list.append({"name": p[0].strip(), "type": p[1].strip()})
         return {"type": "function", "name": args[0], "args": arg_list, "return": ret}
-    
-    # Ignore others
     def struct_def(self, args): return None
     def test_def(self, args): return None
     def statement(self, args): return None

@@ -57,7 +57,7 @@ def cmd_run(args):
 
 def cmd_test(args):
     target_file = build(args.filename)
-    trigger_code = f"\n\nif __name__ == '__main__':\n    run_tests(include_ai={args.real})"
+    trigger_code = f"\n\nif __name__ == '__main__':\n    run_tests(include_ai={args.include_ai})\n"
     with open(target_file, 'a') as f:
         f.write(trigger_code)
     subprocess.call([sys.executable, target_file])
@@ -91,7 +91,7 @@ def main():
     subparsers.add_parser("run", help="Run file").add_argument("filename")
     test = subparsers.add_parser("test", help="Run tests")
     test.add_argument("filename")
-    test.add_argument("--real", action="store_true")
+    test.add_argument("--include_ai", action="store_true")
     subparsers.add_parser("init", help="Init project")
     subparsers.add_parser("update", help="Update models")
 

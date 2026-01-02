@@ -1,0 +1,24 @@
+struct Sentiment {
+    mood: Enum<"Very Positive", "Positive", "Negative", "Very Negative", "Neutral">,
+    score: Int
+}
+
+ai fn analyze(text: String) -> Sentiment {
+    instruction: "Analyze the sentiment."
+    model: "gemini-2.5-flash-lite"
+}
+
+print("Running Analysis...");
+let result = analyze("it was good, but some of the things didn't work, but I recommend!");
+
+print(result.value.mood);
+print(result.value.score);
+
+test "Mocked Positive Flow" {
+    mock analyze => Sentiment { mood: "Positive", score: 99 };
+
+    let result = analyze("I hate this");
+
+    assert result.value.score == 99;
+    assert result.value.mood == "Positive";
+}

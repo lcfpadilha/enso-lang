@@ -2,7 +2,7 @@
 import os, json, time, sys
 import requests
 from typing import Any, List, Dict, Literal 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from abc import ABC, abstractmethod
 
 MOCKS = {}
@@ -32,20 +32,15 @@ class OpenAIDriver(LLMDriver):
     def complete(self, model: str, system: str, user: str, schema: Dict) -> str:
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key: raise ValueError("Missing OPENAI_API_KEY")
-        
-        url = "[https://api.openai.com/v1/chat/completions](https://api.openai.com/v1/chat/completions)"
+        url = "https://api.openai.com/v1/chat/completions"
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-        
-        # Force JSON via prompt + mode
         system_prompt = f"{system}\n\nYou MUST return valid JSON matching this schema:\n{json.dumps(schema)}"
-        
         payload = {
             "model": model,
             "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user}],
             "response_format": {"type": "json_object"},
             "temperature": 0.1
         }
-        
         try:
             resp = requests.post(url, json=payload, headers=headers)
             resp.raise_for_status()
@@ -58,9 +53,10 @@ class GeminiDriver(LLMDriver):
     def complete(self, model: str, system: str, user: str, schema: Dict) -> str:
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key: raise ValueError("Missing GEMINI_API_KEY")
+        api_key = api_key.strip()
+        clean_model = model.replace('"', '').replace("'", "").strip()
         
-        # Call Google API
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent?key={api_key}"
         
         payload = {
             "contents": [{"parts": [{"text": f"System: {system}\nUser: {user}"}]}],
@@ -69,12 +65,13 @@ class GeminiDriver(LLMDriver):
                 "response_schema": schema
             }
         }
-        
+
         try:
             resp = requests.post(url, json=payload)
             resp.raise_for_status()
             return resp.json()['candidates'][0]['content']['parts'][0]['text']
         except Exception as e:
+            print(f"    [Error] Gemini Connection Failed: {url}")
             if 'resp' in locals(): print(f"    [Details] {resp.text}")
             raise e
 
@@ -111,11 +108,11 @@ class EnsoAgent:
         self.driver = get_driver(self.spec.get('type', 'openai'))
 
     def _clean_json(self, raw: str) -> str:
-        # Robust cleaner for Markdown/Backticks
         raw = raw.strip()
         if raw.startswith("```json"): raw = raw[7:]
         elif raw.startswith("```"): raw = raw[3:]
         if raw.endswith("```"): raw = raw[:-3]
+        if raw.startswith("System:"): raw = raw.replace("System:", "", 1)
         return raw.strip()
 
     def run(self, input_text, response_model):
@@ -123,61 +120,78 @@ class EnsoAgent:
             print(f"    [Mock] Serving response for '{self.name}'")
             return Probabilistic(value=MOCKS[self.name], confidence=1.0, cost=0.0, model_used="MOCK")
 
-        print(f"\n[Enso] Agent '{self.name}' -> {self.model} ({self.spec.get('type')})...")
+        print(f"\n[Enso] Agent '{self.name}' -> {self.model}...")
         schema = response_model.model_json_schema()
-        
+
         start_t = time.time()
-        # 1. Call API
         raw_json = self.driver.complete(self.model, self.instruction, input_text, schema)
         latency = time.time() - start_t
         
-        # 2. Clean Response
         clean_json = self._clean_json(raw_json)
-        
         in_tok = len(self.instruction)//4 + len(input_text)//4
         out_tok = len(clean_json)//4
         cost = (in_tok/1e6 * self.spec.get('cost_in', 0)) + (out_tok/1e6 * self.spec.get('cost_out', 0))
 
         try:
-            # 3. Parse & Validate
             data = json.loads(clean_json)
             val = response_model(**data)
             print(f"    [Meta] Cost: ${round(cost, 6)} | Latency: {round(latency, 2)}s")
             return Probabilistic(value=val, confidence=0.99, cost=cost, model_used=self.model)
         except Exception as e:
             print(f"    [Parse Error] {e}")
-            print(f"    [Raw Output] {raw_json[:100]}...") # Print first 100 chars
+            print(f"    [Raw Output] {raw_json[:200]}...") 
             return Probabilistic(value=None, confidence=0.0, cost=0.0, model_used=self.model)
 
+# --- Test Runner ---
 def run_tests(include_ai=False):
     print(f"\n🧪 Running Tests (Include AI: {include_ai})...")
     g = globals()
     tests = [name for name in g if name.startswith("test_")]
-    passed, skipped = 0, 0
+    passed = 0
+    skipped = 0
     for t in tests:
-        if "_AI_" in t and not include_ai:
-            skipped += 1; continue
+        is_ai_test = "_AI_" in t
+        print(t)
+        if is_ai_test and not include_ai:
+            skipped += 1
+            continue
         MOCKS.clear()
         try:
-            g[t](); print(f"✅ PASS: {t}"); passed += 1
-        except Exception as e: print(f"❌ FAIL: {t} ({e})")
+            g[t]()
+            print(f"✅ PASS: {t}")
+            passed += 1
+        except Exception as e:
+            print(f"❌ FAIL: {t} ({e})")
     print(f"\nSummary: {passed} Passed, {skipped} Skipped.")
 
 
 class Sentiment(BaseModel):
-    mood: str
+    mood: Literal["Very Positive", "Positive", "Negative", "Very Negative", "Neutral"]
     score: int
 
 
 def analyze(text: str):
-    agent = EnsoAgent(name="analyze", instruction="Analyze the sentiment.", model="gemini-flash-latest")
-    return agent.run(str(locals()), Sentiment)
+    agent = EnsoAgent(name="analyze", instruction="Analyze the sentiment.", model="gemini-2.5-flash-lite")
+    # Filter variables to only send arguments, not the agent itself
+    inputs = {k:v for k,v in locals().items() if k != 'agent' and not k.startswith('__')}
+    return agent.run(str(inputs), Sentiment)
 
 
 print("Running Analysis...")
 
-result = analyze("I completely love this new programming language!")
+result = analyze("it was good, but some of the things didn't work, but I recommend!")
 
 print(result.value.mood)
 
 print(result.value.score)
+
+def test_AI_Mocked_Positive_Flow():
+    pass
+    MOCKS['analyze'] = Sentiment(mood="Positive", score=99)
+    result = analyze("I hate this")
+    print(result.value.mood)
+    assert result.value.score == 99
+    assert result.value.mood == "Positive"
+
+if __name__ == '__main__':
+    run_tests(include_ai=True)
