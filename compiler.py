@@ -360,13 +360,16 @@ def {name}({arg_str}):
         if len(args) == 4:
             name, arg_str, ret_type, body = args
         else:
-            name, ret_type, body = args[0], "", args[2]
+            name, ret_type, body, arg_str = args[0], args[1], args[2], ""
         
-        return f"def {name}({arg_str}):\n    {body}"
+        # Indent each line of body by 4 spaces
+        indented_body = "\n    ".join(body.split("\n"))
+        return f"def {name}({arg_str}):\n    {indented_body}"
 
     def stmt_block(self, args):
         if not args: return "pass"
-        return "\n    ".join(args)
+        # Don't add indentation here; let the parent rule handle it
+        return "\n".join(args)
     
     def statement(self, args):
         # Unwrap the wrapper node to get the actual python string
@@ -387,15 +390,19 @@ def {name}({arg_str}):
 
     def if_stmt(self, args):
         cond, body_true = args[0], args[1]
-        res = f"if {cond}:\n        {body_true}"
-        if len(args) > 2: res += f"\n    else:\n        {args[2]}"
+        # Indent each line of body_true by 4 spaces
+        indented_body = "\n    ".join(body_true.split("\n"))
+        res = f"if {cond}:\n    {indented_body}"
+        if len(args) > 2: 
+            indented_else = "\n    ".join(args[2].split("\n"))
+            res += f"\n    else:\n    {indented_else}"
         return res
 
     def for_stmt(self, args):
         var_name, iterator, body = args[0], args[1], args[2]
-        # We manually add indentation (8 spaces) to match if_stmt style 
-        # for simple nesting
-        return f"for {var_name} in {iterator}:\n        {body}"
+        # Indent each line of body by 4 spaces
+        indented_body = "\n    ".join(body.split("\n"))
+        return f"for {var_name} in {iterator}:\n    {indented_body}"
     
     def return_stmt(self, args):
         return f"return {args[0]}"
@@ -411,9 +418,11 @@ def {name}({arg_str}):
             body = args[1]
         slug = name.replace(" ", "_")
         prefix = "test_AI_" if is_ai else "test_"
-        return f"def {prefix}{slug}():\n    pass\n    {body}"
+        # Indent each line of body by 4 spaces
+        indented_body = "\n    ".join(body.split("\n"))
+        return f"def {prefix}{slug}():\n    pass\n    {indented_body}"
 
-    def test_body(self, args): return "\n    ".join(args)
+    def test_body(self, args): return "\n".join(args)
     def call_expr(self, args):
         name = args[0]
         params = args[1] if len(args) > 1 else ""
@@ -511,10 +520,18 @@ def compile_source(file_path):
     # STEP 1: BUNDLE IMPORTS
     full_source = bundle(file_path)
     # STEP 2: PARSE BUNDLED CODE
-    parser = Lark(enso_grammar, parser='lalr', transformer=EnsoTransformer())
-    return parser.parse(full_source)
+    # Use Earley parser instead of LALR to handle grammar ambiguities
+    # (e.g., distinguishing between "expr { field: value }" in struct init
+    # vs "expr { statements }" in control flow)
+    parser = Lark(enso_grammar, parser='earley')
+    tree = parser.parse(full_source)
+    # Apply transformer to the parse tree
+    transformer = EnsoTransformer()
+    return transformer.transform(tree)
 
 def analyze_source(source_code):
-    parser = Lark(enso_grammar, parser='lalr', transformer=SchemaExtractor())
-    try: return parser.parse(source_code)
+    parser = Lark(enso_grammar, parser='earley')
+    tree = parser.parse(source_code)
+    transformer = SchemaExtractor()
+    try: return transformer.transform(tree)
     except Exception: return []
