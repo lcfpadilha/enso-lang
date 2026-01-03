@@ -166,7 +166,7 @@ enso init
 | `enso init` | Creates a new project with `main.enso` | `enso init` |
 | `enso run` | Compiles and executes a file | `enso run main.enso` |
 | `enso test` | Runs internal tests (mocks only) | `enso test main.enso` |
-| `enso test --real` | Runs tests allowing real AI calls | `enso test main.enso --real` |
+| `enso test --include_ai` | Runs tests allowing real AI calls | `enso test main.enso --include_ai` |
 | `enso update` | Updates local model pricing/registry | `enso update` |
 
 ---
