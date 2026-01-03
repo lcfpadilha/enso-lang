@@ -44,16 +44,22 @@ def bundle(file_path, visited=None):
 # 1. THE GRAMMAR (The Laws of Ensō)
 # ==========================================
 enso_grammar = r"""
-    start: (import_def | struct_def | ai_fn_def | test_def | statement)*
+    start: (import_def | struct_def | ai_fn_def | regular_fn_def | test_def | statement)*
 
+    // --- Imports ---
     import_def: "import" STRING ";"
 
     // --- Definitions ---
     struct_def: "struct" NAME "{" field_def* "}"
     field_def: NAME ":" type_expr [","]
 
+    // AI Function (Declarative)
     ai_fn_def: "ai" "fn" NAME "(" arg_list? ")" "->" type_expr "{" ai_body "}"
     ai_body: instruction_stmt config_stmt* validate_block?
+
+    // Regular Function (Imperative)
+    regular_fn_def: "fn" NAME "(" arg_list? ")" "->" type_expr "{" stmt_block "}"
+    stmt_block: statement*
     
     // --- Testing ---
     test_def: "test" [test_type] STRING "{" test_body "}"
@@ -70,10 +76,8 @@ enso_grammar = r"""
     validate_block: "validate" "(" NAME ")" "{" validation_rule* "}"
     validation_rule: expr "=>" STRING [","]
 
-    // --- TYPE EXPRESSIONS (FIXED) ---
-    // We strictly separate the rules so the Transformer knows which branch was hit
+    // --- Types ---
     type_expr: list_type | enum_type | simple_type
-    
     simple_type: NAME
     list_type: "List" "<" type_expr ">"
     enum_type: "Enum" "<" (STRING [","])* ">"
@@ -82,29 +86,39 @@ enso_grammar = r"""
     arg_def: NAME ":" type_expr
 
     // --- Statements ---
-    statement: let_stmt | print_stmt
+    statement: let_stmt | print_stmt | return_stmt
     let_stmt: "let" NAME "=" expr ";"
     print_stmt: "print" "(" expr ")" ";"
+    return_stmt: "return" expr ";"
     
     // --- Expressions ---
-    ?expr: NAME | prop_access | binary_expr | struct_init | call_expr | NUMBER | STRING
-    
+    ?expr: NAME | prop_access | binary_expr | struct_init | call_expr | NUMBER | STRING | list_literal
     struct_init: NAME "{" (field_init)* "}"
     field_init: NAME ":" expr [","]
-
     call_expr: NAME "(" args_call? ")"
     args_call: expr ("," expr)*
-    
     prop_access: NAME ("." NAME)+
-
     binary_expr: expr OPERATOR expr
     OPERATOR: ">" | "<" | "==" | "!=" | ">=" | "<=" | "&&" | "||"
+    list_literal: "[" (expr ("," expr)*)? "]"
 
+    // --- Terminals ---
     NAME: /[a-zA-Z_]\w*/
     STRING: /".*?"/
     NUMBER: /\d+(\.\d+)?/
+    
+    // --- COMMENTS (NEW) ---
+    // Match // until end of line
+    COMMENT_1: /\/\/[^\n]*/
+    COMMENT_2: /\#[^\n]*/
+    // Match /* ... */ (dotall)
+    BLOCK_COMMENT: /\/\*[\s\S]*?\*\//
+
     %import common.WS
     %ignore WS
+    %ignore COMMENT_1
+    %ignore COMMENT_2
+    %ignore BLOCK_COMMENT
 """
 
 # ==========================================
@@ -118,6 +132,30 @@ from pydantic import BaseModel, ValidationError
 from abc import ABC, abstractmethod
 
 MOCKS = {}
+
+def resolve_refs(schema):
+    defs = schema.get('$defs', {})
+
+    def expand(node):
+        if isinstance(node, dict):
+            # If it's a reference, replace it with the actual definition
+            if '$ref' in node:
+                ref_name = node['$ref'].split('/')[-1]
+                # Recursively expand the definition we found
+                return expand(defs[ref_name])
+            
+            # Otherwise, traverse dict, removing '$defs' keys
+            return {
+                k: expand(v) 
+                for k, v in node.items() 
+                if k != '$defs'
+            }
+        elif isinstance(node, list):
+            return [expand(item) for item in node]
+        else:
+            return node
+
+    return expand(schema)
 
 # --- Dynamic Configuration ---
 def load_model_config(model_name):
@@ -233,10 +271,11 @@ class EnsoAgent:
             return Probabilistic(value=MOCKS[self.name], confidence=1.0, cost=0.0, model_used="MOCK")
 
         print(f"\\n[Enso] Agent '{self.name}' -> {self.model}...")
-        schema = response_model.model_json_schema()
+        raw_schema = response_model.model_json_schema()
+        clean_schema = resolve_refs(raw_schema)
 
         start_t = time.time()
-        raw_json = self.driver.complete(self.model, self.instruction, input_text, schema)
+        raw_json = self.driver.complete(self.model, self.instruction, input_text, clean_schema)
         latency = time.time() - start_t
         
         clean_json = self._clean_json(raw_json)
@@ -308,6 +347,29 @@ def {name}({arg_str}):
         for x in args: 
             if isinstance(x, dict): d.update(x)
         return d
+
+    def regular_fn_def(self, args):
+        # args: [name, arg_list, type_expr, stmt_block] OR [name, type_expr, stmt_block]
+        if len(args) == 4:
+            name, arg_str, ret_type, body = args
+        else:
+            name, ret_type, body = args[0], "", args[2]
+        
+        return f"def {name}({arg_str}):\n    {body}"
+
+    def stmt_block(self, args):
+        if not args: return "pass"
+        return "\n    ".join(args)
+    
+    def statement(self, args):
+        # Unwrap the wrapper node to get the actual python string
+        return args[0]
+
+    def let_stmt(self, args): return f"{args[0]} = {args[1]}"
+    def print_stmt(self, args): return f"print({args[0]})"
+    
+    def return_stmt(self, args):
+        return f"return {args[0]}"
     
     def test_def(self, args):
         if len(args) == 3:
@@ -327,6 +389,9 @@ def {name}({arg_str}):
         name = args[0]
         params = args[1] if len(args) > 1 else ""
         return f"{name}({params})"
+    
+    def list_literal(self, args):
+        return f"[{', '.join(args)}]"
     
     def args_call(self, args): return ", ".join(args)
     def mock_stmt(self, args): return f"MOCKS['{args[0]}'] = {args[1]}"
@@ -385,6 +450,7 @@ class SchemaExtractor(Transformer):
                 arg_list.append({"name": p[0].strip(), "type": p[1].strip()})
         return {"type": "function", "name": args[0], "args": arg_list, "return": ret}
     def struct_def(self, args): return None
+    def regular_fn_def(self, args): return None
     def test_def(self, args): return None
     def statement(self, args): return None
     def print_stmt(self, args): return None
