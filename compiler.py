@@ -86,9 +86,10 @@ enso_grammar = r"""
     arg_def: NAME ":" type_expr
 
     // --- Statements ---
-    statement: let_stmt | print_stmt | return_stmt | if_stmt | for_stmt | expr_stmt
+    statement: let_stmt | assign_stmt | print_stmt | return_stmt | if_stmt | for_stmt | expr_stmt
 
     let_stmt: "let" NAME "=" expr ";"
+    assign_stmt: NAME "=" expr ";"
     print_stmt: "print" "(" expr ")" ";"
     return_stmt: "return" expr ";"
     if_stmt: "if" expr "{" stmt_block "}" ("else" "{" stmt_block "}")?
@@ -386,6 +387,7 @@ def {name}({arg_str}):
         return args[0]
 
     def let_stmt(self, args): return f"{args[0]} = {args[1]}"
+    def assign_stmt(self, args): return f"{args[0]} = {args[1]}"
     def print_stmt(self, args): return f"print({args[0]})"
 
     def if_stmt(self, args):
@@ -494,6 +496,7 @@ class SchemaExtractor(Transformer):
     def statement(self, args): return None
     def print_stmt(self, args): return None
     def let_stmt(self, args): return None
+    def assign_stmt(self, args): return None
     def for_stmt(self, args): return None
     def arg_list(self, args): return ", ".join(args)
     def arg_def(self, args): return f"{args[0]}: {args[1]}"
