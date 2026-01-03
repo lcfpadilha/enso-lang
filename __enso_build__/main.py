@@ -190,32 +190,43 @@ def run_tests(include_ai=False):
     print(f"\nSummary: {passed} Passed, {skipped} Skipped.")
 
 
-class Sentiment(BaseModel):
-    mood: Literal["Very Positive", "Positive", "Negative", "Very Negative", "Neutral"]
-    score: int
+class Skill(BaseModel):
+    name: str
+    level: Literal["Beginner", "Intermediate", "Expert"]
+
+class Candidate(BaseModel):
+    name: str
+    years_experience: int
+    top_skills: List[Skill]
+    last_role: str
+
+class Evaluation(BaseModel):
+    hiring_decision: Literal["Hire", "Reject", "Interview"]
+    fit_score: int
+    reasoning: str
 
 
-def analyze(text: str):
-    agent = EnsoAgent(name="analyze", instruction="Analyze the sentiment.", model="gemini-2.5-flash-lite")
+def parse_resume(raw_text: str):
+    agent = EnsoAgent(name="parse_resume", instruction="Extract candidate details. Be strict with skill levels.", model="gemini-2.5-flash-lite")
     # Filter variables to only send arguments, not the agent itself
     inputs = {k:v for k,v in locals().items() if k != 'agent' and not k.startswith('__')}
-    return agent.run(str(inputs), Sentiment)
+    return agent.run(str(inputs), Candidate)
 
 
-print("Running Analysis...")
 
-result = analyze("it was good, but some of the things didn't work, but I recommend!")
+def evaluate_candidate(candidate: Candidate):
+    agent = EnsoAgent(name="evaluate_candidate", instruction="You are a hiring manager looking for a Senior Python Engineer. Evaluate this candidate.", model="gemini-2.5-flash-lite")
+    # Filter variables to only send arguments, not the agent itself
+    inputs = {k:v for k,v in locals().items() if k != 'agent' and not k.startswith('__')}
+    return agent.run(str(inputs), Evaluation)
 
-print(result.value.mood)
 
-print(result.value.score)
+def run_evaluation(resume_text: str):
+    candidate = parse_resume(resume_text)
+    return evaluate_candidate(candidate)
 
-def test_AI_Mocked_Positive_Flow():
-    pass
-    MOCKS['analyze'] = Sentiment(mood="Positive", score=99)
-    result = analyze("I hate this")
-    assert result.value.score == 99
-    assert result.value.mood == "Positive"
+candidates = ["JAMES T. KIRK\nSan Francisco, CA | (555) 019-2834 | jtkirk@starfleet.example.com\nLinkedIn: linkedin.com/in/jtkirk\n\nSUMMARY\nSenior Backend Engineer with 8 years of experience in distributed systems and cloud infrastructure. Proficient in Go, Rust, and Kubernetes.\n\nEXPERIENCE\n\nSenior Software Engineer | Enterprise Solutions\nJan 2020 - Present\n* Architected a microservices-based payment gateway processing $1M+ daily.\n* Reduced latency by 40% by implementing gRPC instead of REST.\n* Mentored 3 junior developers and conducted code reviews.\n\nSoftware Developer | TechNova Inc.\nJune 2016 - Dec 2019\n* Developed RESTful APIs using Python (Django) and PostgreSQL.\n* Integrated AWS Lambda functions for serverless data processing.\n* Migrated legacy monolithic application to Docker containers.\n\nEDUCATION\nB.S. Computer Science | Starfleet Academy\nGraduated: May 2016\n\nSKILLS\nLanguages: Go, Python, Rust, Java\nInfrastructure: AWS, Docker, Kubernetes, Terraform\nDatabases: PostgreSQL, Redis, Cassandra", "SARAH CONNOR  \nLos Angeles, CA • 555-010-9988 • sarah.connor@sky.net  \n\nPROFILE  \nExperienced Data Scientist specialized in predictive modeling and anomaly detection.  \n\nWORK HISTORY  \nCyberdyne Systems — Lead Data Scientist  \n03/2019 – Current  \n• Built neural networks for image recognition using TensorFlow and Keras. • Optimized SQL queries reducing data retrieval time by 50%. • Collaborated with product teams to define data requirements.  \n\nTechCom | Data Analyst  \n06/2015 – 02/2019  \nAnalyzed large datasets to identify market trends... Automated reporting dashboards using Tableau and Python (Pandas).  \n\nEDUCATION  \nM.S. Statistics — University of West Coast (2015)  \nB.S. Mathematics — University of West Coast (2013)  \n\nTECHNICAL SKILLS  \nPython, R, SQL, Machine Learning, NLP, BigQuery, Spark, Git", "Alex Murphy\nDetroit, MI\nalex.murphy@ocp.example.edu\nGitHub: github.com/robocop\n\nEDUCATION\nUniversity of Detroit\nBachelor of Science in Computer Engineering\nExpected Graduation: Dec 2024\nGPA: 3.8/4.0\n\nRelevant Coursework: \nData Structures & Algorithms, Operating Systems, Embedded Systems, Computer Vision, Linear Algebra.\n\nPROJECTS\nAutonomous Drone Navigation (Capston Project)\n- Fall 2023\n- Developed C++ control logic for obstacle avoidance using LiDAR data.\n- Implemented A* search algorithm for path planning.\n\nPersonal Portfolio Website\n- Summer 2022\n- Built using React.js and Node.js deployed on Vercel.\n\nSKILLS\nC++, C, Python, MATLAB, Linux/Unix, Git, Verilog.", "Ellen Ripley\nNostromo, Space | 555-012-3456 | ripley@weyland.example.com\n\nProfessional Summary\nI am a dedicated Project Manager with over 10 years of experience leading cross-functional teams in high-stress environments. My focus is on risk management and operational safety.\n\nProfessional Experience\nFrom 2015 to 2023, I served as a Warrant Officer at Weyland-Yutani Corp. In this role, I was responsible for overseeing the commercial towing vehicle 'Nostromo'. My duties included managing a crew of seven, ensuring adherence to safety protocols, and handling crisis management situations. I successfully navigated complex logistical challenges and maintained operational integrity under extreme pressure.\n\nPrior to that, between 2010 and 2015, I worked as a Flight Officer. I coordinated flight paths and managed fuel consumption metrics, resulting in a 15% reduction in operational costs.\n\nEducation\nI hold a Master of Engineering from the New York Aeronautics Institute, achieved in 2009.\n\nCertifications\nPMP (Project Management Professional), Scum Master Certified, Industrial Safety Specialist."]
 
-if __name__ == '__main__':
-    run_tests(include_ai=True)
+for candidate in candidates:
+    evaluation = run_evaluation(candidate)
+    print(evaluation)
