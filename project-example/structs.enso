@@ -1,0 +1,21 @@
+struct Skill {
+    name: String,
+    level: Enum<"Beginner", "Intermediate", "Expert">
+}
+
+struct Candidate {
+    name: String,
+    years_experience: Int,
+    top_skills: List<Skill>,
+    last_role: String
+}
+
+struct Evaluation {
+    hiring_decision: Enum<"Hire", "Reject", "Interview">,
+    fit_score: Int,
+    reasoning: String
+}
+
+struct FinalDecision {
+    decision: Enum<"First Candidate", "Second Candidate", "None">
+}
