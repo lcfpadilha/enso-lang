@@ -78,7 +78,7 @@ enso_grammar = r"""
 
     // --- Types ---
     type_expr: list_type | enum_type | simple_type
-    simple_type: NAME
+    simple_type: NAME | TYPE_NAME
     list_type: "List" "<" type_expr ">"
     enum_type: "Enum" "<" (STRING [","])* ">"
 
@@ -86,32 +86,39 @@ enso_grammar = r"""
     arg_def: NAME ":" type_expr
 
     // --- Statements ---
-    statement: let_stmt | print_stmt | return_stmt
+    statement: let_stmt | print_stmt | return_stmt | if_stmt | for_stmt | expr_stmt
+
     let_stmt: "let" NAME "=" expr ";"
     print_stmt: "print" "(" expr ")" ";"
     return_stmt: "return" expr ";"
+    if_stmt: "if" expr "{" stmt_block "}" ("else" "{" stmt_block "}")?
+    for_stmt: "for" NAME "in" expr "{" stmt_block "}"
+    expr_stmt: expr ";"
     
     // --- Expressions ---
-    ?expr: NAME | prop_access | binary_expr | struct_init | call_expr | NUMBER | STRING | list_literal
+    ?expr: term (OPERATOR term)*
+    ?term: atom | "(" expr ")"
+    ?atom: NAME | STRING | NUMBER | prop_access | call_expr | struct_init | list_literal
+
+    list_literal: "[" (expr ("," expr)*)? "]"
+
     struct_init: NAME "{" (field_init)* "}"
     field_init: NAME ":" expr [","]
+
     call_expr: NAME "(" args_call? ")"
     args_call: expr ("," expr)*
     prop_access: NAME ("." NAME)+
-    binary_expr: expr OPERATOR expr
-    OPERATOR: ">" | "<" | "==" | "!=" | ">=" | "<=" | "&&" | "||"
-    list_literal: "[" (expr ("," expr)*)? "]"
 
     // --- Terminals ---
-    NAME: /[a-zA-Z_]\w*/
-    STRING: /".*?"/
+    TYPE_NAME: /[A-Z][a-zA-Z_]\w*/
+    NAME: /(?!(?:let|print|return|if|else|for|in|import|struct|ai|fn|test|mock|assert|instruction|temperature|model|validate|List|Enum)\b)[a-zA-Z_]\w*/
+    STRING: /"(?:[^"\\]|\\.)*"/
     NUMBER: /\d+(\.\d+)?/
     
-    // --- COMMENTS (NEW) ---
-    // Match // until end of line
+    OPERATOR: "==" | "!=" | ">=" | "<=" | "&&" | "||" | "+" | "-" | ">" | "<"
+    
     COMMENT_1: /\/\/[^\n]*/
     COMMENT_2: /\#[^\n]*/
-    // Match /* ... */ (dotall)
     BLOCK_COMMENT: /\/\*[\s\S]*?\*\//
 
     %import common.WS
@@ -365,8 +372,30 @@ def {name}({arg_str}):
         # Unwrap the wrapper node to get the actual python string
         return args[0]
 
+    def expr(self, args):
+        # Join parts of an expression into a single Python expression string
+        return " ".join(args)
+
+    def term(self, args):
+        return args[0] if args else ""
+
+    def atom(self, args):
+        return args[0]
+
     def let_stmt(self, args): return f"{args[0]} = {args[1]}"
     def print_stmt(self, args): return f"print({args[0]})"
+
+    def if_stmt(self, args):
+        cond, body_true = args[0], args[1]
+        res = f"if {cond}:\n        {body_true}"
+        if len(args) > 2: res += f"\n    else:\n        {args[2]}"
+        return res
+
+    def for_stmt(self, args):
+        var_name, iterator, body = args[0], args[1], args[2]
+        # We manually add indentation (8 spaces) to match if_stmt style 
+        # for simple nesting
+        return f"for {var_name} in {iterator}:\n        {body}"
     
     def return_stmt(self, args):
         return f"return {args[0]}"
@@ -425,6 +454,7 @@ def {name}({arg_str}):
     def field_init(self, args): return f"{args[0]}={args[1]}"
     def binary_expr(self, args): return f"{args[0]} {args[1]} {args[2]}"
     def NAME(self, t): return str(t)
+    def TYPE_NAME(self, t): return str(t)
     def STRING(self, t): return str(t)
     def NUMBER(self, t): return str(t)
     def CONFIG_KEY(self, t): return str(t)
@@ -455,10 +485,12 @@ class SchemaExtractor(Transformer):
     def statement(self, args): return None
     def print_stmt(self, args): return None
     def let_stmt(self, args): return None
+    def for_stmt(self, args): return None
     def arg_list(self, args): return ", ".join(args)
     def arg_def(self, args): return f"{args[0]}: {args[1]}"
     def type_expr(self, args): return "Any"
     def NAME(self, t): return str(t)
+    def TYPE_NAME(self, t): return str(t)
     def STRING(self, t): return str(t)
     def NUMBER(self, t): return str(t)
     def ai_body(self, t): return None
