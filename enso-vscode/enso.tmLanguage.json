@@ -1,0 +1,79 @@
+{
+  "name": "Enso",
+  "scopeName": "source.enso",
+  "fileTypes": ["enso"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#keywords" },
+    { "include": "#types" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#operators" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.enso",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.enso",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.enso",
+          "match": "\\b(let|fn|ai|struct|test|if|else|for|in|return|import|mock|assert|instruction|validate|model|temperature)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "storage.type.enso",
+          "match": "\\b(String|Int|Float|List|Enum)\\b"
+        },
+        {
+          "name": "entity.name.type.enso",
+          "match": "\\b[A-Z][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.enso",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.enso",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.enso",
+          "match": "\\b\\d+(\\.\\d+)?\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.enso",
+          "match": "(->|=>|==|!=|>=|<=|&&|\\|\\||[+\\-*/])"
+        }
+      ]
+    }
+  }
+}

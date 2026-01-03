@@ -1,0 +1,39 @@
+{
+  "name": "enso-language-support",
+  "displayName": "Enso Language Support",
+  "description": "Syntax highlighting and language support for Enso DSL",
+  "version": "0.1.0",
+  "publisher": "lcfpadilha",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lcfpadilha/enso-lang"
+  },
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "enso",
+        "aliases": [
+          "Enso",
+          "enso"
+        ],
+        "extensions": [
+          ".enso"
+        ],
+        "configuration": "./.vscode/language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "enso",
+        "scopeName": "source.enso",
+        "path": "./.vscode/enso.tmLanguage.json"
+      }
+    ]
+  }
+}

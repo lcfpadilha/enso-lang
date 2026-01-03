@@ -54,6 +54,9 @@ cover/
 # Enso build artifacts
 __enso_build__/
 
+# VS Code Extension artifacts
+*.vsix
+
 # Translations
 *.mo
 *.pot

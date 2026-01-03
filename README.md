@@ -171,4 +171,23 @@ enso init
 
 ---
 
+## 🎨 Syntax Highlighting
+
+### VS Code
+
+Enso files (`.enso`) have full syntax highlighting support in VS Code.
+
+**Installation:**
+1. Open VS Code **Extensions** panel (`Ctrl+Shift+X`)
+2. Click the menu button (⋯) → **"Install from VSIX..."**
+3. Navigate to `enso-vscode/enso-language-support-0.1.0.vsix` in the project root
+4. Click **"Install"**
+5. Reload VS Code (`Ctrl+Shift+P` → "Reload Window")
+
+### GitHub
+
+Enso code blocks are automatically highlighted on GitHub with syntax coloring.
+
+---
+
 *Ensō is currently in Alpha. Built for the stress test of the future.*
