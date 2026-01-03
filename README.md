@@ -1,1 +1,174 @@
-# enso-lanng
+# Ensō (円相)
+
+**The AI-Native Systems Language.**
+
+Ensō is a statically-typed, compiled language designed for the Agentic Era. It treats Large Language Models (LLMs) as reliable CPU functions, abstracting away the complexity of API clients, JSON schema generation, retry logic, and structured parsing.
+
+**Write Intent. Compile to Infrastructure.**
+
+---
+
+## ⚡ Quick Start
+
+### 1. The Code (`hiring.enso`)
+
+```rust
+// 1. Define your data shape (The "Contract")
+struct Skill {
+    name: String,
+    level: Enum<"Beginner", "Intermediate", "Expert">
+}
+
+struct Candidate {
+    name: String,
+    skills: List<Skill>
+}
+
+// 2. Define your Intelligence (The "Declarative Logic")
+ai fn extract_resume(text: String) -> Candidate {
+    instruction: "Extract name and skills. Be strict with seniority levels."
+    model: "gemini-flash-latest"
+}
+
+// 3. Define your Orchestration (The "CPU Logic")
+fn main() {
+    let raw_text = "Hi, I'm Neo. I know Kung Fu (Expert) and Python (Beginner).";
+    
+    print("--- Parsing ---");
+    let result = extract_resume(raw_text);
+    
+    print("Name: " + result.value.name);
+    
+    for skill in result.value.skills {
+        print("Skill: " + skill.name);
+    }
+}
+```
+
+### 2. Run It
+
+```bash
+enso run hiring.enso
+```
+
+### Output
+
+```text
+--- Parsing ---
+[Enso] Agent 'extract_resume' -> gemini-flash-latest...
+    [Meta] Cost: $0.00012 | Latency: 1.2s
+Name: Neo
+Skill: Kung Fu
+Skill: Python
+```
+
+---
+
+## 🛠 Features
+
+### 🧠 AI Functions (ai fn)
+
+Forget import openai. Define a function, give it an instruction, and declare what you want back. The compiler handles the rest.
+
+```rust
+ai fn summarize(text: String) -> String {
+    instruction: "Summarize in 3 bullet points."
+}
+```
+
+### 🔒 Structured Types (`struct`)
+
+Ensō compiles strict types into **Pydantic Models** and automatically generates **JSON Schemas** to force the LLM to return valid data.
+
+```rust
+struct User {
+    name: String,
+    age: Int,
+    tags: List<String>
+}
+```
+
+### 🧪 Native Testing & Mocking
+
+Test your logic without hitting the API. Ensō has a built-in test runner with `mock` support.
+
+```rust
+test "User parsing logic" {
+    // Force the AI to return this specific data
+    mock extract_resume => Candidate { name: "Trinity", skills: [] };
+    
+    let res = extract_resume("irrelevant text");
+    assert res.value.name == "Trinity";
+}
+```
+
+### 🔌 Standard CPU Functions
+
+Write standard imperative code to glue your AI steps together.
+
+```rust
+fn process(data: String) -> Int {
+    if data == "" {
+        return 0;
+    }
+    let parsed = ai_func(data);
+    return parsed.value.score;
+}
+```
+
+---
+
+## 🏗 Architecture
+
+Ensō is a **Transpiled Language**.
+
+1. **Source Code (`.enso`):** Your clean, readable logic.
+2. **Compiler:** Uses Lark to parse the AST.
+3. **Transpilation:** Converts Ensō AST into Python + Pydantic + Requests.
+4. **Runtime:** The generated Python code is executed, managing API keys (`OPENAI_API_KEY`, `GEMINI_API_KEY`) and HTTP connections automatically.
+
+---
+
+## 📦 Installation & Setup
+
+### 1. Clone & Install Dependencies
+
+```bash
+git clone [https://github.com/your-repo/enso.git](https://github.com/your-repo/enso.git)
+cd enso
+```
+
+### 2. Configure API Keys
+
+```bash
+export GEMINI_API_KEY="your-key-here"
+export OPENAI_API_KEY="your-key-here"
+```
+
+### 3. Setup the enso Command
+
+Run the following command in the project root to install the CLI tool in editable mode. This makes enso globally available while allowing you to modify the source code.
+
+```bash
+pip install -e .
+```
+
+### Initialize a Project
+
+```bash
+enso init
+```
+
+## 💻 CLI Usage
+
+| Command | Description | Example |
+| :--- | :--- | :--- |
+| `enso init` | Creates a new project with `main.enso` | `enso init` |
+| `enso run` | Compiles and executes a file | `enso run main.enso` |
+| `enso test` | Runs internal tests (mocks only) | `enso test main.enso` |
+| `enso test --real` | Runs tests allowing real AI calls | `enso test main.enso --real` |
+| `enso update` | Updates local model pricing/registry | `enso update` |
+
+---
+
+*Ensō is currently in Alpha. Built for the stress test of the future.*
