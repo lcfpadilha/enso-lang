@@ -34,13 +34,15 @@ ai fn extract_resume(text: String) -> Candidate {
 fn main() {
     let raw_text = "Hi, I'm Neo. I know Kung Fu (Expert) and Python (Beginner).";
     
-    print("--- Parsing ---");
-    let result = extract_resume(raw_text);
-    
-    print("Name: " + result.value.name);
-    
-    for skill in result.value.skills {
-        print("Skill: " + skill.name);
+    // The 'match' statement guarantees you handle success AND failure.
+    match extract_resume(raw_text) {
+        Result::Ok(c) => {
+            print("Hired: " + c.name);
+        }
+        Result::Err(e) => {
+            print("Parsing failed. Reason:");
+            print(e);
+        }
     }
 }
 ```
@@ -61,6 +63,19 @@ Name: Neo
 Skill: Kung Fu
 Skill: Python
 ```
+
+---
+
+## Why Ensō?
+
+### 1. Type-Safe Intelligence
+Ensō compiles strict types into **JSON Schemas** automatically. If the LLM returns data that doesn't match your `struct`, Ensō catches it before it hits your logic.
+
+### 2. Error as a First-Class Citizen
+AI is non-deterministic. It *will* fail. Ensō's `Result<T, E>` type and `match` syntax force you to handle refusals, timeouts, and hallucinations at compile time. No more crashing in production because the model returned "I cannot answer that."
+
+### 3. Vendor Agnostic
+Switch from `gemini-1.5-flash` to `gpt-4o` by changing one line of code. The compiler handles the API differences.
 
 ---
 

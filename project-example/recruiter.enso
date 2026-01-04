@@ -1,13 +1,13 @@
 import "structs.enso";
 
 // AI Function: extract candidate details from resume and return Candidate details
-ai fn parse_resume(raw_text: String) -> Candidate {
+ai fn parse_resume(raw_text: String) -> Result<Candidate, AIError> {
     instruction: "Extract candidate details. Be strict with skill levels."
     model: "gemini-2.5-flash-lite"
 }
 
-// AI Function: compare candidate A over candidate B, retuns FinalDecision
-ai fn compare_candidates(candidate_a: Candidate, candidate_b: Candidate) -> FinalDecision {
+// AI Function: compare candidate A over candidate B, returns FinalDecision
+ai fn compare_candidates(candidate_a: Candidate, candidate_b: Candidate) -> Result<FinalDecision, AIError> {
     instruction: "You are a hiring manager looking for a Senior Python Engineer. Evaluate first candidate over the second one. Returns the best candidate, IF ANY, to the job."
     model: "gemini-2.5-flash-lite"
 }

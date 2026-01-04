@@ -3,7 +3,7 @@ struct Sentiment {
     score: Int
 }
 
-ai fn analyze(text: String) -> Sentiment {
+ai fn analyze(text: String) -> Result<Sentiment, AIError> {
     instruction: "Analyze the sentiment."
     model: "gemini-2.5-flash-lite"
 }
@@ -11,5 +11,14 @@ ai fn analyze(text: String) -> Sentiment {
 print("Running Analysis...");
 let result = analyze("it was good, but some of the things didn't work, but I recommend!");
 
-print(result.value.mood);
-print(result.value.score);
+match result {
+    Ok(value) => {
+        print(value.value.mood);
+        print(value.value.score);
+    },
+    Err(error) => {
+        print("Error occurred:");
+        print(error.kind);
+        print(error.message);
+    }
+}

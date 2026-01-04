@@ -28,7 +28,11 @@
       "patterns": [
         {
           "name": "keyword.control.enso",
-          "match": "\\b(let|fn|ai|struct|test|if|else|for|in|return|import|mock|assert|instruction|validate|model|temperature)\\b"
+          "match": "\\b(let|fn|ai|struct|test|if|else|for|in|return|import|mock|assert|instruction|validate|model|temperature|match)\\b"
+        },
+        {
+          "name": "keyword.control.error.enso",
+          "match": "\\b(Ok|Err)\\b"
         }
       ]
     },
@@ -36,7 +40,7 @@
       "patterns": [
         {
           "name": "storage.type.enso",
-          "match": "\\b(String|Int|Float|List|Enum)\\b"
+          "match": "\\b(String|Int|Float|List|Enum|Result|AIError|ErrorKind)\\b"
         },
         {
           "name": "entity.name.type.enso",

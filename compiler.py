@@ -64,10 +64,9 @@ enso_grammar = r"""
     // --- Testing ---
     test_def: "test" [test_type] STRING "{" test_body "}"
     test_type: "ai"
-    test_body: (mock_stmt | statement | assertion)*
+    test_body: (mock_stmt | statement)*
     
     mock_stmt: "mock" NAME "=>" expr ";"
-    assertion: "assert" expr ";"
 
     // --- Details ---
     instruction_stmt: "instruction" ":" STRING
@@ -77,16 +76,17 @@ enso_grammar = r"""
     validation_rule: expr "=>" STRING [","]
 
     // --- Types ---
-    type_expr: list_type | enum_type | simple_type
+    type_expr: result_type | list_type | enum_type | simple_type
     simple_type: NAME | TYPE_NAME
     list_type: "List" "<" type_expr ">"
     enum_type: "Enum" "<" (STRING [","])* ">"
+    result_type: "Result" "<" type_expr "," type_expr ">"
 
     arg_list: arg_def ("," arg_def)*
     arg_def: NAME ":" type_expr
 
     // --- Statements ---
-    statement: let_stmt | assign_stmt | print_stmt | return_stmt | if_stmt | for_stmt | expr_stmt
+    statement: let_stmt | assign_stmt | print_stmt | return_stmt | if_stmt | for_stmt | match_stmt | assertion | expr_stmt
 
     let_stmt: "let" NAME "=" expr ";"
     assign_stmt: NAME "=" expr ";"
@@ -94,6 +94,10 @@ enso_grammar = r"""
     return_stmt: "return" expr ";"
     if_stmt: "if" expr "{" stmt_block "}" ("else" "{" stmt_block "}")?
     for_stmt: "for" NAME "in" expr "{" stmt_block "}"
+    match_stmt: "match" expr "{" match_arm* "}"
+    match_arm: match_pattern "=>" "{" stmt_block "}" [","]
+    match_pattern: "Ok" "(" NAME ")" -> ok_pattern | "Err" "(" NAME ")" -> err_pattern
+    assertion: "assert" expr ";"
     expr_stmt: expr ";"
     
     // --- Expressions ---
@@ -112,7 +116,7 @@ enso_grammar = r"""
 
     // --- Terminals ---
     TYPE_NAME: /[A-Z][a-zA-Z_]\w*/
-    NAME: /(?!(?:let|print|return|if|else|for|in|import|struct|ai|fn|test|mock|assert|instruction|temperature|model|validate|List|Enum)\b)[a-zA-Z_]\w*/
+    NAME: /(?!(?:let|print|return|if|else|for|in|import|struct|ai|fn|test|mock|assert|instruction|temperature|model|validate|List|Enum|Result|match|Ok|Err)\b)[a-zA-Z_]\w*/
     STRING: /"(?:[^"\\]|\\.)*"/
     NUMBER: /\d+(\.\d+)?/
     
@@ -135,11 +139,72 @@ enso_grammar = r"""
 RUNTIME_PREAMBLE = """
 import os, json, time, sys
 import requests
-from typing import Any, List, Dict, Literal 
+from typing import Any, List, Dict, Literal, Union, Optional
 from pydantic import BaseModel, ValidationError
 from abc import ABC, abstractmethod
+from enum import Enum
 
 MOCKS = {}
+
+# ==========================================
+# ERROR HANDLING: Result<T, E> Model
+# ==========================================
+
+class ErrorKind(str, Enum):
+    # Categorizes AI failures for composable error handling
+    API_ERROR = "ApiError"
+    PARSE_ERROR = "ParseError"
+    HALLUCINATION_ERROR = "HallucinationError"
+    TIMEOUT_ERROR = "TimeoutError"
+    REFUSAL_ERROR = "RefusalError"
+    INVALID_CONFIG_ERROR = "InvalidConfigError"
+
+class AIError(BaseModel):
+    # Rich error context for AI operations
+    kind: ErrorKind
+    message: str
+    details: Optional[str] = None
+    cost: float
+    model: str
+    timestamp: Optional[str] = None
+
+class Result:
+    # Base class for Result<T, E> (Ok or Err)
+    def is_ok(self) -> bool:
+        return isinstance(self, Ok)
+    
+    def is_err(self) -> bool:
+        return isinstance(self, Err)
+    
+    def unwrap(self):
+        # Get value or raise error
+        if isinstance(self, Ok):
+            return self.value
+        else:
+            raise RuntimeError(f"Called unwrap() on Err: {self.error.message}")
+    
+    def unwrap_or(self, default):
+        # Get value or return default
+        if isinstance(self, Ok):
+            return self.value
+        else:
+            return default
+
+class Ok(Result):
+    # Success case: Ok<T>
+    def __init__(self, value):
+        self.value = value
+    
+    def __repr__(self):
+        return f"Ok({self.value})"
+
+class Err(Result):
+    # Error case: Err<E>
+    def __init__(self, error):
+        self.error = error
+    
+    def __repr__(self):
+        return f"Err({self.error})"
 
 def resolve_refs(schema):
     defs = schema.get('$defs', {})
@@ -273,33 +338,102 @@ class EnsoAgent:
         if raw.startswith("System:"): raw = raw.replace("System:", "", 1)
         return raw.strip()
 
-    def run(self, input_text, response_model):
-        if self.name in MOCKS:
-            print(f"    [Mock] Serving response for '{self.name}'")
-            return Probabilistic(value=MOCKS[self.name], confidence=1.0, cost=0.0, model_used="MOCK")
-
-        print(f"\\n[Enso] Agent '{self.name}' -> {self.model}...")
-        raw_schema = response_model.model_json_schema()
-        clean_schema = resolve_refs(raw_schema)
-
-        start_t = time.time()
-        raw_json = self.driver.complete(self.model, self.instruction, input_text, clean_schema)
-        latency = time.time() - start_t
-        
-        clean_json = self._clean_json(raw_json)
-        in_tok = len(self.instruction)//4 + len(input_text)//4
-        out_tok = len(clean_json)//4
-        cost = (in_tok/1e6 * self.spec.get('cost_in', 0)) + (out_tok/1e6 * self.spec.get('cost_out', 0))
-
+    def run(self, input_text, response_model) -> Union[Ok, Err]:
+        # Execute AI function and return Result<Probabilistic<T>, AIError>.
+        # Categorizes all failures as AIError with proper ErrorKind.
+        cost = 0.0
         try:
-            data = json.loads(clean_json)
-            val = response_model(**data)
-            print(f"    [Meta] Cost: ${round(cost, 6)} | Latency: {round(latency, 2)}s")
-            return Probabilistic(value=val, confidence=0.99, cost=cost, model_used=self.model)
+            # Check mocks first
+            if self.name in MOCKS:
+                print(f"    [Mock] Serving response for '{self.name}'")
+                mocked_value = MOCKS[self.name]
+                return Ok(Probabilistic(value=mocked_value, confidence=1.0, cost=0.0, model_used="MOCK"))
+
+            # Validate configuration
+            if not self.model:
+                return Err(AIError(
+                    kind=ErrorKind.INVALID_CONFIG_ERROR,
+                    message="Model name is empty",
+                    cost=0.0,
+                    model=self.model or "unknown"
+                ))
+
+            print(f"\\n[Enso] Agent '{self.name}' -> {self.model}...")
+            raw_schema = response_model.model_json_schema()
+            clean_schema = resolve_refs(raw_schema)
+
+            # Call driver with error handling
+            try:
+                start_t = time.time()
+                raw_json = self.driver.complete(self.model, self.instruction, input_text, clean_schema)
+                latency = time.time() - start_t
+            except ValueError as e:
+                # Invalid config (missing API keys, etc)
+                return Err(AIError(
+                    kind=ErrorKind.INVALID_CONFIG_ERROR,
+                    message=str(e),
+                    cost=0.0,
+                    model=self.model
+                ))
+            except TimeoutError as e:
+                return Err(AIError(
+                    kind=ErrorKind.TIMEOUT_ERROR,
+                    message="Request timeout",
+                    details=str(e),
+                    cost=cost,
+                    model=self.model
+                ))
+            except Exception as e:
+                # Network/API errors
+                return Err(AIError(
+                    kind=ErrorKind.API_ERROR,
+                    message="API request failed",
+                    details=str(e),
+                    cost=cost,
+                    model=self.model
+                ))
+            
+            # Parse response
+            clean_json = self._clean_json(raw_json)
+            in_tok = len(self.instruction)//4 + len(input_text)//4
+            out_tok = len(clean_json)//4
+            cost = (in_tok/1e6 * self.spec.get('cost_in', 0)) + (out_tok/1e6 * self.spec.get('cost_out', 0))
+
+            # Try to parse JSON
+            try:
+                data = json.loads(clean_json)
+            except json.JSONDecodeError as e:
+                return Err(AIError(
+                    kind=ErrorKind.PARSE_ERROR,
+                    message="Invalid JSON response",
+                    details=f"{str(e)}\\nRaw: {raw_json[:200]}",
+                    cost=cost,
+                    model=self.model
+                ))
+            
+            # Try to validate against schema
+            try:
+                val = response_model(**data)
+                print(f"    [Meta] Cost: ${round(cost, 6)} | Latency: {round(latency, 2)}s")
+                return Ok(Probabilistic(value=val, confidence=0.99, cost=cost, model_used=self.model))
+            except ValidationError as e:
+                return Err(AIError(
+                    kind=ErrorKind.HALLUCINATION_ERROR,
+                    message="Response doesn't match schema",
+                    details=str(e),
+                    cost=cost,
+                    model=self.model
+                ))
+        
         except Exception as e:
-            print(f"    [Parse Error] {e}")
-            print(f"    [Raw Output] {raw_json[:200]}...") 
-            return Probabilistic(value=None, confidence=0.0, cost=0.0, model_used=self.model)
+            # Catch-all for unexpected errors
+            return Err(AIError(
+                kind=ErrorKind.API_ERROR,
+                message="Unexpected error",
+                details=str(e),
+                cost=cost,
+                model=self.model
+            ))
 
 # --- Test Runner ---
 def run_tests(include_ai=False):
@@ -409,6 +543,55 @@ def {name}({arg_str}):
     def return_stmt(self, args):
         return f"return {args[0]}"
     
+    def match_stmt(self, args):
+        # Translate match expressions to Python if/elif chains.
+        expr = args[0]
+        arms = args[1:]
+        
+        # Build if/elif chain
+        lines = []
+        for i, arm in enumerate(arms):
+            pattern_type, var_name, body = arm
+            
+            if pattern_type == 'Ok':
+                condition = f"isinstance({expr}, Ok)"
+                setup = f"{var_name} = {expr}.value"
+            else:  # Err
+                condition = f"isinstance({expr}, Err)"
+                setup = f"{var_name} = {expr}.error"
+            
+            keyword = "if" if i == 0 else "elif"
+            lines.append(f"{keyword} {condition}:")
+            lines.append(f"    {setup}")
+            
+            # Indent each line of the body by 4 spaces
+            for body_line in body.split("\n"):
+                if body_line.strip():  # Only indent non-empty lines
+                    lines.append(f"    {body_line}")
+        
+        return "\n".join(lines)
+    
+    def match_arm(self, args):
+        # pattern_type (from ok_pattern or err_pattern), body
+        pattern_type = args[0]  # This will be ('Ok', var) or ('Err', var) from the pattern handlers
+        body = args[1]
+        
+        # Extract the type and variable name from the tuple returned by pattern handler
+        if isinstance(pattern_type, tuple):
+            pattern_kind, var_name = pattern_type
+            return (pattern_kind, var_name, body)
+        else:
+            # Fallback - shouldn't happen
+            return (pattern_type, 'x', body)
+    
+    def ok_pattern(self, args):
+        # args[0] is the NAME token for the variable
+        return ('Ok', args[0])
+    
+    def err_pattern(self, args):
+        # args[0] is the NAME token for the variable
+        return ('Err', args[0])
+    
     def test_def(self, args):
         if len(args) == 3:
             is_ai = True
@@ -460,6 +643,12 @@ def {name}({arg_str}):
     def enum_type(self, args):
         options = ", ".join([str(x) for x in args])
         return f"Literal[{options}]"
+
+    def result_type(self, args):
+        """Result<T, E> becomes Union[Ok[T], Err[E]] in Python"""
+        ok_type = args[0]
+        err_type = args[1]
+        return f"Union[Ok, Err]"  # Simplified: just return Union type hint
 
     def struct_init(self, args): return f"{args[0]}({', '.join(args[1:])})"
     def field_init(self, args): return f"{args[0]}={args[1]}"

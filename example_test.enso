@@ -5,6 +5,29 @@ test "Mocked Positive Flow" {
 
     let result = analyze("I hate this");
 
-    assert result.value.score == 99;
-    assert result.value.mood == "Positive";
+    match result {
+        Ok(probabilistic) => {
+            assert probabilistic.value.score == 99;
+            assert probabilistic.value.mood == "Positive";
+        },
+        Err(error) => {
+            assert false;
+        }
+    }
+}
+
+test "Mocked Negative Flow" {
+    mock analyze => Sentiment { mood: "Negative", score: 20 };
+
+    let result = analyze("This is terrible");
+
+    match result {
+        Ok(probabilistic) => {
+            assert probabilistic.value.score == 20;
+            assert probabilistic.value.mood == "Negative";
+        },
+        Err(error) => {
+            assert false;
+        }
+    }
 }
