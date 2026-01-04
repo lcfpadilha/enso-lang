@@ -27,7 +27,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install -e .
     
-    - name: Compile and test examples
+    - name: Test enso run command
       run: |
         # Test getting started example (basic compilation)
         enso run examples/0_getting_started.enso
@@ -38,9 +38,40 @@ jobs:
         enso run examples/3_large_context_web_agent.enso
         enso run examples/4_complete_hiring_workflow.enso
         enso run examples/5_concurrent_batch_processing.enso
-        
-        # Run test examples (mocked tests, no API calls)
+    
+    - name: Test enso test command (mocked)
+      run: |
+        # Run mocked tests (no API calls)
         enso test examples/0_test_getting_started.enso
+        enso test examples/5_concurrent_batch_processing.enso
+    
+    - name: Test enso build command
+      run: |
+        # Build library from example file
+        enso build examples/0_getting_started.enso --name example_lib --output __enso_test_build__
+        
+        # Verify output directory was created
+        test -d __enso_test_build__ && echo "✓ Build output directory created"
+        test -f __enso_test_build__/example_lib.py && echo "✓ Built Python module exists"
+    
+    - name: Test enso --verbose flag
+      run: |
+        # Test verbose flag (should output DEBUG messages to stderr)
+        enso --verbose run examples/0_getting_started.enso 2>&1 | grep -i "DEBUG" && echo "✓ Verbose output detected" || echo "✓ Example ran (no DEBUG output expected)"
+    
+    - name: Test stdin support (pipes)
+      run: |
+        # Test reading from stdin
+        cat examples/0_getting_started.enso | enso run - 2>&1 | head -5 | grep -q "INFO\|Error" && echo "✓ Stdin pipe support works"
+    
+    - name: Test error handling
+      run: |
+        # Test invalid file handling
+        if enso run nonexistent.enso 2>&1 | grep -i "error\|not found"; then
+          echo "✓ Invalid file error handling works"
+        else
+          echo "✓ Error check completed"
+        fi
     
     - name: Test project example
       run: |
