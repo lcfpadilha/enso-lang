@@ -25,14 +25,14 @@
         "extensions": [
           ".enso"
         ],
-        "configuration": "./.vscode/language-configuration.json"
+        "configuration": "./language-configuration.json"
       }
     ],
     "grammars": [
       {
         "language": "enso",
         "scopeName": "source.enso",
-        "path": "./.vscode/enso.tmLanguage.json"
+        "path": "./enso.tmLanguage.json"
       }
     ]
   }
