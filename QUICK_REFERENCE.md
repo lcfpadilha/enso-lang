@@ -779,33 +779,6 @@ This reference document is automatically updated whenever:
 
 ## Known Limitations
 
-### If/Else Statement
-The if/else statement has an indentation issue in the compiler's code generation. **Workaround**: Use simple `if` statements without `else`, or use `match` expressions instead for Result types.
-
-✅ **Works:**
-```rust
-if condition {
-    print("true");
-}
-```
-
-⚠️ **Has compiler bug:**
-```rust
-if condition {
-    print("true");
-} else {
-    print("false");  // Indentation error in generated code
-}
-```
-
-**Solution:** Use `match` or separate if statements:
-```rust
-match result {
-    Ok(value) => { print("success"); },
-    Err(error) => { print("error"); }
-}
-```
-
 ### Reserved Keywords
 Certain names are reserved and cannot be used as struct names:
 - `Result` - Use alternatives like `MyResult`, `ResultData`, etc.

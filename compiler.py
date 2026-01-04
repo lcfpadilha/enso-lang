@@ -658,7 +658,7 @@ def {name}({arg_str}):
         res = f"if {cond}:\n    {indented_body}"
         if len(args) > 2: 
             indented_else = "\n    ".join(args[2].split("\n"))
-            res += f"\n    else:\n    {indented_else}"
+            res += f"\nelse:\n    {indented_else}"
         return res
 
     def for_stmt(self, args):
