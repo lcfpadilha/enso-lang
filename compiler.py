@@ -3,6 +3,19 @@ import os
 import re
 from lark import Lark, Transformer
 
+# Global verbose flag
+_VERBOSE = False
+
+def set_verbose(value):
+    """Set the global verbose flag."""
+    global _VERBOSE
+    _VERBOSE = value
+
+def debug_log(message):
+    """Log a debug message to stderr if verbose mode is enabled."""
+    if _VERBOSE:
+        print(f"\033[94mDEBUG:\033[0m {message}", file=sys.stderr)
+
 # ==========================================
 # 0. THE BUNDLER (New Feature)
 # ==========================================
@@ -275,7 +288,7 @@ class OpenAIDriver(LLMDriver):
             resp.raise_for_status()
             return resp.json()['choices'][0]['message']['content']
         except Exception as e:
-            if 'resp' in locals(): print(f"    [Details] {resp.text}")
+            if 'resp' in locals(): print(f"    [Details] {resp.text}", file=sys.stderr)
             raise e
 
 class GeminiDriver(LLMDriver):
@@ -300,8 +313,8 @@ class GeminiDriver(LLMDriver):
             resp.raise_for_status()
             return resp.json()['candidates'][0]['content']['parts'][0]['text']
         except Exception as e:
-            print(f"    [Error] Gemini Connection Failed: {url}")
-            if 'resp' in locals(): print(f"    [Details] {resp.text}")
+            print(f"    [Error] Gemini Connection Failed: {url}", file=sys.stderr)
+            if 'resp' in locals(): print(f"    [Details] {resp.text}", file=sys.stderr)
             raise e
 
 class LocalDriver(LLMDriver):
@@ -381,7 +394,7 @@ class EnsoAgent:
         try:
             # Check mocks first
             if self.name in MOCKS:
-                print(f"    [Mock] Serving response for '{self.name}'")
+                print(f"  \033[93m[Mock]\033[0m Serving response for '{self.name}'", file=sys.stderr)
                 mocked_value = MOCKS[self.name]
                 return Ok(Probabilistic(value=mocked_value, confidence=1.0, cost=0.0, model_used="MOCK"))
 
@@ -394,7 +407,7 @@ class EnsoAgent:
                     model=self.model or "unknown"
                 ))
 
-            print(f"\\n[Enso] Agent '{self.name}' -> {self.model}...")
+            print("\\n\033[92m\033[1mINFO:\033[0m Agent '" + self.name + "' -> " + self.model, file=sys.stderr)
             raw_schema = response_model.model_json_schema()
             clean_schema = resolve_refs(raw_schema)
             
@@ -454,7 +467,7 @@ class EnsoAgent:
             # Try to validate against schema
             try:
                 val = response_model(**data)
-                print(f"    [Meta] Cost: ${round(cost, 6)} | Latency: {round(latency, 2)}s")
+                print(f"  \033[96m💰 Cost: ${round(cost, 6)} | ⏱️  Latency: {round(latency, 2)}s\033[0m", file=sys.stderr)
                 return Ok(Probabilistic(value=val, confidence=0.99, cost=cost, model_used=self.model))
             except ValidationError as e:
                 return Err(AIError(
@@ -491,25 +504,25 @@ class EnsoAgent:
 
 # --- Test Runner ---
 def run_tests(include_ai=False):
-    print(f"\\n🧪 Running Tests (Include AI: {include_ai})...")
+    print(f"\\n🧪 Running Tests (Include AI: {include_ai})...", file=sys.stderr)
     g = globals()
     tests = [name for name in g if name.startswith("test_")]
     passed = 0
     skipped = 0
     for t in tests:
         is_ai_test = "_AI_" in t
-        print(t)
+        print(t, file=sys.stderr)
         if is_ai_test and not include_ai:
             skipped += 1
             continue
         MOCKS.clear()
         try:
             g[t]()
-            print(f"✅ PASS: {t}")
+            print(f"✅ PASS: {t}", file=sys.stderr)
             passed += 1
         except Exception as e:
-            print(f"❌ FAIL: {t} ({e})")
-    print(f"\\nSummary: {passed} Passed, {skipped} Skipped.")
+            print(f"❌ FAIL: {t} ({e})", file=sys.stderr)
+    print(f"\\nSummary: {passed} Passed, {skipped} Skipped.", file=sys.stderr)
 """
 
 # ==========================================
@@ -858,9 +871,16 @@ class SchemaExtractor(Transformer):
     def mock_stmt(self, t): return None
     def assertion(self, t): return None
 
-def compile_source(file_path):
+def compile_source(file_path, source_code=None):
     # STEP 1: BUNDLE IMPORTS
-    full_source = bundle(file_path)
+    if source_code is None:
+        full_source = bundle(file_path)
+    else:
+        # Use provided source code directly (for stdin)
+        full_source = source_code
+    
+    debug_log(f"Compiling source: {file_path}")
+    
     # STEP 2: PARSE BUNDLED CODE
     # Use Earley parser instead of LALR to handle grammar ambiguities
     # (e.g., distinguishing between "expr { field: value }" in struct init

@@ -311,9 +311,11 @@ enso init
 | :--- | :--- | :--- |
 | `enso init` | Creates a new project with `main.enso` | `enso init` |
 | `enso run` | Compiles and executes a file | `enso run main.enso` |
+| `enso run -` | Reads source code from stdin (pipe support) | `cat script.enso \| enso run -` |
 | `enso test` | Runs internal tests (mocks only) | `enso test main.enso` |
 | `enso test --include_ai` | Runs tests allowing real AI calls | `enso test main.enso --include_ai` |
 | `enso update` | Updates local model pricing/registry | `enso update` |
+| `enso --verbose <cmd>` | Enable debug output, model cost and model calls on stderr | `enso --verbose run main.enso 2>&1` |
 
 ---
 

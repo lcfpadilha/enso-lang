@@ -4,10 +4,14 @@ import os
 import subprocess
 import json
 import glob
-from compiler import compile_source, analyze_source
+from compiler import compile_source, analyze_source, set_verbose
 
 BUILD_DIR = "__enso_build__"
 CONFIG_FILE = "models.json"
+
+def log(message):
+    """Log informational messages to stderr."""
+    print(f"\033[92m\033[1mINFO:\033[0m {message}", file=sys.stderr)
 
 def cmd_update(args):
     latest_models = {
@@ -17,21 +21,30 @@ def cmd_update(args):
     }
     with open(CONFIG_FILE, "w") as f:
         json.dump(latest_models, f, indent=2)
-    print(f"✅ Updated {CONFIG_FILE} with {len(latest_models)} models.")
+    log(f"Updated {CONFIG_FILE} with {len(latest_models)} models.")
 
-def build(filepath):
-    if not os.path.exists(filepath):
-        print(f"Error: File '{filepath}' not found.")
+def build(filepath, verbose=False):
+    set_verbose(verbose)
+    
+    if filepath is None or filepath == "-":
+        # Read from stdin
+        source_code = sys.stdin.read()
+        filepath = "<stdin>"
+    elif not os.path.exists(filepath):
+        print(f"Error: File '{filepath}' not found.", file=sys.stderr)
         sys.exit(1)
+    else:
+        with open(filepath, 'r') as f:
+            source_code = f.read()
         
     if not os.path.exists(CONFIG_FILE):
         cmd_update(None)
 
-    # Compile from file path directly (handles imports)
+    # Compile from source code
     try:
-        python_code = compile_source(filepath)
+        python_code = compile_source(filepath, source_code if filepath == "<stdin>" else None)
     except Exception as e:
-        print(f"❌ Compilation Failed:\n{e}")
+        print(f"Error: Compilation Failed:\n{e}", file=sys.stderr)
         sys.exit(1)
 
     if not os.path.exists(BUILD_DIR):
@@ -44,7 +57,7 @@ def build(filepath):
     return target_file
 
 def cmd_run(args):
-    target_file = build(args.filename)
+    target_file = build(args.filename, verbose=args.verbose)
     # Check if main() exists in the compiled code
     with open(target_file, 'r') as f:
         code = f.read()
@@ -62,19 +75,19 @@ def cmd_run(args):
     subprocess.call([sys.executable, target_file])
 
 def cmd_test(args):
-    target_file = build(args.filename)
+    target_file = build(args.filename, verbose=args.verbose)
     trigger_code = f"\n\nif __name__ == '__main__':\n    run_tests(include_ai={args.include_ai})\n"
     with open(target_file, 'a') as f:
         f.write(trigger_code)
     subprocess.call([sys.executable, target_file])
 
 def cmd_init(args):
-    print("Initializing project...")
+    log("Initializing project...")
     with open("main.enso", "w") as f:
         f.write('import "structs.enso";\n\nprint("Hello Enso");')
     with open("structs.enso", "w") as f:
         f.write('struct User { name: String }')
-    print("Created main.enso and structs.enso")
+    log("Created main.enso and structs.enso")
 
 def cmd_build(args):
     """Build Ensō files into a Python library package."""
@@ -88,21 +101,21 @@ def cmd_build(args):
     elif os.path.isdir(source):
         enso_files = sorted(glob.glob(os.path.join(source, "*.enso")))
     else:
-        print(f"Error: '{source}' is neither a file nor directory")
+        print(f"Error: '{source}' is neither a file nor directory", file=sys.stderr)
         sys.exit(1)
     
     if not enso_files:
-        print(f"Error: No .enso files found in '{source}'")
+        print(f"Error: No .enso files found in '{source}'", file=sys.stderr)
         sys.exit(1)
     
-    print(f"📦 Building library '{name}' with {len(enso_files)} file(s)...")
+    log(f"Building library '{name}' with {len(enso_files)} file(s)...")
     
     # Compile all files and extract function info
     all_functions = []
     compiled_code = []
     
     for enso_file in enso_files:
-        print(f"  Compiling {os.path.basename(enso_file)}...")
+        log(f"  Compiling {os.path.basename(enso_file)}...")
         try:
             # Analyze to get function signatures
             with open(enso_file, 'r') as f:
@@ -114,7 +127,7 @@ def cmd_build(args):
             code = compile_source(enso_file)
             compiled_code.append(code)
         except Exception as e:
-            print(f"  ❌ Failed to compile {enso_file}: {e}")
+            print(f"Error: Failed to compile {enso_file}: {e}", file=sys.stderr)
             sys.exit(1)
     
     # Create output package directory
@@ -222,22 +235,23 @@ match result:
                 args = ", ".join([f"{a['name']}: {a['type']}" for a in func.get('args', [])])
                 f.write(f"- `{func['name']}({args})` → {func.get('return', 'Result')}\n")
     
-    print(f"✅ Library built successfully!")
-    print(f"📁 Output directory: {output_dir}/{name}")
-    print(f"📋 Files generated:")
-    print(f"   - _enso_runtime.py (compiled code)")
-    print(f"   - __init__.py (exports)")
-    print(f"   - setup.py (package config)")
-    print(f"   - requirements.txt (dependencies)")
-    print(f"   - README.md (documentation)")
-    print(f"\n🚀 To use: pip install -e {output_dir}")
+    log("Library built successfully!")
+    log(f"📁 Output directory: {output_dir}/{name}")
+    log(f"📋 Files generated:")
+    log(f"   - _enso_runtime.py (compiled code)")
+    log(f"   - __init__.py (exports)")
+    log(f"   - setup.py (package config)")
+    log(f"   - requirements.txt (dependencies)")
+    log(f"   - README.md (documentation)")
+    log(f"🚀 To use: pip install -e {output_dir}")
 
 
 def main():
     parser = argparse.ArgumentParser(description="Ensō CLI")
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose output (sent to stderr)")
     subparsers = parser.add_subparsers(dest="command")
 
-    subparsers.add_parser("run", help="Run file").add_argument("filename")
+    subparsers.add_parser("run", help="Run file").add_argument("filename", nargs="?", default="-", help="File to run (default: read from stdin)")
     test = subparsers.add_parser("test", help="Run tests")
     test.add_argument("filename")
     test.add_argument("--include_ai", action="store_true")
