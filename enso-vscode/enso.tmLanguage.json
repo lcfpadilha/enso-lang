@@ -28,7 +28,7 @@
       "patterns": [
         {
           "name": "keyword.control.enso",
-          "match": "\\b(let|fn|ai|struct|test|if|else|for|in|return|import|mock|assert|instruction|validate|model|temperature|match)\\b"
+          "match": "\\b(let|fn|ai|struct|test|if|else|for|in|return|import|mock|assert|instruction|validate|model|temperature|match|concurrent)\\b"
         },
         {
           "name": "keyword.control.error.enso",

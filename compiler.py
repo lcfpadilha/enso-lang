@@ -69,7 +69,7 @@ enso_grammar = r"""
     mock_stmt: "mock" NAME "=>" expr ";"
 
     // --- Details ---
-    instruction_stmt: "instruction" ":" STRING
+    instruction_stmt: "instruction" ":" STRING [","]
     config_stmt: CONFIG_KEY ":" (NUMBER | STRING) [","]
     CONFIG_KEY: "temperature" | "model"
     validate_block: "validate" "(" NAME ")" "{" validation_rule* "}"
@@ -86,9 +86,10 @@ enso_grammar = r"""
     arg_def: NAME ":" type_expr
 
     // --- Statements ---
-    statement: let_stmt | assign_stmt | print_stmt | return_stmt | if_stmt | for_stmt | match_stmt | assertion | expr_stmt
+    statement: let_stmt | assign_stmt | print_stmt | return_stmt | if_stmt | for_stmt | match_stmt | concurrent_stmt | assertion | expr_stmt
 
     let_stmt: "let" NAME "=" expr ";"
+    concurrent_stmt: "concurrent" call_expr "for" NAME "in" expr ";"
     assign_stmt: NAME "=" expr ";"
     print_stmt: "print" "(" expr ")" ";"
     return_stmt: "return" expr ";"
@@ -116,7 +117,7 @@ enso_grammar = r"""
 
     // --- Terminals ---
     TYPE_NAME: /[A-Z][a-zA-Z_]\w*/
-    NAME: /(?!(?:let|print|return|if|else|for|in|import|struct|ai|fn|test|mock|assert|instruction|temperature|model|validate|List|Enum|Result|match|Ok|Err)\b)[a-zA-Z_]\w*/
+    NAME: /(?!(?:let|print|return|if|else|for|in|import|struct|ai|fn|test|mock|assert|instruction|temperature|model|validate|List|Enum|Result|match|Ok|Err|concurrent)\b)[a-zA-Z_]\w*/
     STRING: /"(?:[^"\\]|\\.)*"/
     NUMBER: /\d+(\.\d+)?/
     
@@ -137,7 +138,7 @@ enso_grammar = r"""
 # 2. THE RUNTIME PREAMBLE
 # ==========================================
 RUNTIME_PREAMBLE = """
-import os, json, time, sys
+import os, json, time, sys, asyncio
 import requests
 from typing import Any, List, Dict, Literal, Union, Optional
 from pydantic import BaseModel, ValidationError
@@ -435,6 +436,20 @@ class EnsoAgent:
                 model=self.model
             ))
 
+    async def run_async(self, input_text, response_model) -> Union[Ok, Err]:
+        # Async wrapper for concurrent execution
+        return self.run(input_text, response_model)
+
+    def run_concurrent(self, items, func_name, response_model):
+        # Execute agent.run() for each item concurrently using asyncio
+        # Returns List[Result[T, E]] (list of Ok or Err for each item)
+        async def gather_results():
+            tasks = [self.run_async(item, response_model) for item in items]
+            return await asyncio.gather(*tasks)
+        
+        # Run the async function directly with asyncio.run()
+        return asyncio.run(gather_results())
+
 # --- Test Runner ---
 def run_tests(include_ai=False):
     print(f"\\n🧪 Running Tests (Include AI: {include_ai})...")
@@ -477,11 +492,15 @@ class EnsoTransformer(Transformer):
         name = args[0]
         
         return f"""
+# Define response model for {name}
+{name}_response_model = {ret}
+
 def {name}({arg_str}):
-    agent = EnsoAgent(name="{name}", instruction={instr}, model={model})
+    global {name}_agent
+    {name}_agent = EnsoAgent(name="{name}", instruction={instr}, model={model})
     # Filter variables to only send arguments, not the agent itself
-    inputs = {{k:v for k,v in locals().items() if k != 'agent' and not k.startswith('__')}}
-    return agent.run(str(inputs), {ret})
+    inputs = {{k:v for k,v in locals().items() if k != '{name}_agent' and not k.startswith('__')}}
+    return {name}_agent.run(str(inputs), {name}_response_model)
 """
 
     def ai_body(self, args):
@@ -539,6 +558,25 @@ def {name}({arg_str}):
         # Indent each line of body by 4 spaces
         indented_body = "\n    ".join(body.split("\n"))
         return f"for {var_name} in {iterator}:\n    {indented_body}"
+    
+    def concurrent_stmt(self, args):
+        # concurrent FUNCTION(ARGS) for VAR in ITERATOR
+        # args: [call_expr, var_name, iterator_expr]
+        call_expr = args[0]  # e.g., "analyze(text)"
+        var_name = args[1]   # e.g., "text"
+        iterator = args[2]   # e.g., "texts"
+        
+        # Extract function name from call_expr (e.g., "analyze" from "analyze(text)")
+        func_name = call_expr.split("(")[0]
+        
+        # Generate code that uses agent.run_concurrent()
+        # First initialize the agent by calling the function with first item to set up agent
+        # Then call run_concurrent with the full list
+        return f"""# Initialize agent by calling function once
+if not '{func_name}_agent' in globals():
+    temp_init = {func_name}(next(iter({iterator})))
+{func_name}_results = {func_name}_agent.run_concurrent({iterator}, '{func_name}', {func_name}_response_model)
+"""
     
     def return_stmt(self, args):
         return f"return {args[0]}"

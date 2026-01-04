@@ -131,6 +131,40 @@ fn process(data: String) -> Int {
 }
 ```
 
+### ⚙️ Concurrent Batch Operations
+
+Process multiple items through an AI function in parallel. Returns `List<Result<T, E>>` with both successes and failures.
+
+```rust
+ai fn analyze(text: String) -> Result<Sentiment, AIError> {
+    instruction: "Analyze sentiment for text",
+    model: "gpt-4o"
+}
+
+test "Batch Processing" {
+    let texts = ["Great day", "Bad timing", "It is okay"];
+    concurrent analyze(text) for text in texts;  // Process all in parallel
+    
+    // Results: List<Result<Sentiment, AIError>>
+    for result in analyze_results {
+        match result {
+            Ok(sentiment_data) => {
+                print(sentiment_data.value.mood);
+            },
+            Err(error) => {
+                print(error.message);
+            }
+        }
+    }
+}
+```
+
+**Key Features:**
+- ✅ True parallel execution using `asyncio.gather()`
+- ✅ Composable error handling (collects both successes and failures)
+- ✅ Backward compatible with single-function calls
+- ✅ Full mock support for testing
+
 ---
 
 ## 🏗 Architecture

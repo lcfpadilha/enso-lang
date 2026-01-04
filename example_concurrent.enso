@@ -1,0 +1,86 @@
+// Example for Concurrent calls: Batch Sentiment Analysis
+// Demonstrates List<Result<Sentiment, AIError>> return type
+
+struct Sentiment {
+    mood: String,
+    score: Int
+}
+
+ai fn analyze(text: String) -> Result<Sentiment, AIError> {
+    instruction: "Analyze sentiment for text",
+    model: "gpt-4o"
+}
+
+test "Concurrent Analysis Mocked" {
+    mock analyze => Sentiment { mood: "Happy", score: 8 };
+    
+    // Simulate concurrent processing
+    let texts = ["Great day", "Terrible situation", "It is okay"];
+    concurrent analyze(text) for text in texts;
+    
+    // Results is List<Result<Sentiment, AIError>>
+    print("Received results from concurrent batch");
+}
+
+test "Single Analysis Still Works" {
+    mock analyze => Sentiment { mood: "Happy", score: 9 };
+    
+    let result = analyze("This is awesome");
+    match result {
+        Ok(sentiment_data) => {
+            assert sentiment_data.value.mood == "Happy";
+            assert sentiment_data.value.score == 9;
+        },
+        Err(err) => {
+            print(err.message);
+        }
+    }
+}
+
+
+test "Concurrent Batch Processing with Error Handling" {
+    mock analyze => Sentiment { mood: "Happy", score: 8 };
+    
+    let reviews = [
+        "Great product",
+        "Poor quality",
+        "Amazing experience"
+    ];
+    
+    # Execute concurrent batch
+    concurrent analyze(review) for review in reviews;
+    
+    # Process results: analyze_results is List<Result<Sentiment, AIError>>
+    let count = 0;
+    for result in analyze_results {
+        match result {
+            Ok(sentiment_data) => {
+                print(sentiment_data.value.mood);
+                let count = count + 1;
+            },
+            Err(error) => {
+                print(error.message);
+            }
+        }
+    }
+}
+
+test "Single vs Batch Comparison" {
+    mock analyze => Sentiment { mood: "Neutral", score: 5 };
+    
+    # Single item processing (traditional)
+    let single_result = analyze("Just okay");
+    match single_result {
+        Ok(sentiment_data) => {
+            assert sentiment_data.value.score == 5;
+        },
+        Err(err) => {
+            print(err.message);
+        }
+    }
+    
+    # Batch processing (concurrent)
+    let items = ["Just okay"];
+    concurrent analyze(text) for text in items;
+    # analyze_results[0] should match single_result
+}
