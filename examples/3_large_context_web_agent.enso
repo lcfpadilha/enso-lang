@@ -53,7 +53,7 @@ ai fn analyze_webpage(url: String) -> Result<PageSummary, AIError> {
     system_instruction: "You are a web content analyst. Extract key information from the provided text.",
     instruction: "Analyze this webpage content from {url} and provide title, main topic, key points, and sentiment. Content:\n\n{fetch_page(url)}",
     temperature: 0.3,
-    model: "gpt-4o"
+    model: "gemini-flash-latest"
 }
 
 // Classify and summarize long documents
@@ -96,7 +96,7 @@ ai fn classify_document(document_content: String) -> Result<DocumentAnalysis, AI
         )
     ],
     temperature: 0.2,
-    model: "gpt-4o"
+    model: "gemini-flash-latest"
 }
 
 // Competitor intelligence: analyze from multiple sources
@@ -104,7 +104,7 @@ ai fn analyze_competitor(company_name: String, research_data: String) -> Result<
     system_instruction: "You are a competitive intelligence analyst. Provide unbiased assessment of competitors.",
     instruction: "Analyze {company_name} based on this research data:\n\n{research_data}\n\nProvide market position, strengths, weaknesses, and opportunities.",
     temperature: 0.1,
-    model: "gpt-4o"
+    model: "gemini-flash-latest"
 }
 
 fn main() {

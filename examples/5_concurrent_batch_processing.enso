@@ -8,7 +8,7 @@ struct Sentiment {
 
 ai fn analyze(text: String) -> Result<Sentiment, AIError> {
     instruction: "Analyze sentiment for text",
-    model: "gpt-4o"
+    model: "gemini-flash-latest"
 }
 
 test "Concurrent Analysis Mocked" {

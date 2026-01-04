@@ -58,7 +58,7 @@ ai fn classify_sentiment(text: String) -> Result<SentimentAnalysis, AIError> {
         )
     ],
     temperature: 0.1,
-    model: "gpt-4o"
+    model: "gemini-flash-latest"
 }
 
 // Content moderation: constrained to specific actions
@@ -95,7 +95,7 @@ ai fn moderate_content(post: String, platform_context: String) -> Result<Content
         )
     ],
     temperature: 0.05,
-    model: "gpt-4o"
+    model: "gemini-flash-latest"
 }
 
 // Classify emotion: 7 distinct emotions

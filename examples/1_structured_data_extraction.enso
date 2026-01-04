@@ -63,7 +63,7 @@ ai fn parse_resume(raw_text: String) -> Result<Candidate, AIError> {
         )
     ],
     temperature: 0.1,
-    model: "gpt-4o"
+    model: "gemini-flash-latest"
 }
 
 // Evaluate a candidate against a job spec
@@ -71,7 +71,7 @@ ai fn evaluate_candidate(candidate: Candidate, job_title: String) -> Result<Cand
     system_instruction: "You are a senior hiring manager evaluating candidates for {job_title} roles.",
     instruction: "Evaluate if {candidate.name} with {candidate.years_experience} years of experience fits a {job_title} position.",
     temperature: 0.2,
-    model: "gpt-4o"
+    model: "gemini-flash-latest"
 }
 
 // Main orchestration: batch process resumes concurrently
@@ -93,9 +93,12 @@ fn main() {
             Ok(candidate_data) => {
                 let candidate = candidate_data.value;
                 print("✓ Extracted: " + candidate.name);
-                print("  Experience: " + candidate.years_experience + " years");
+                print("  Experience: ");
+                print(candidate.years_experience);
+                print(" years");
                 print("  Last Role: " + candidate.last_role);
-                print("  Top Skills: " + candidate.top_skills.length);
+                print("  Top Skills: ");
+                print(candidate.top_skills);
                 print("");
             },
             Err(error) => {

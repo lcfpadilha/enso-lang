@@ -74,7 +74,7 @@ ai fn extract_candidate_from_resume(resume_text: String) -> Result<Candidate, AI
         )
     ],
     temperature: 0.1,
-    model: "gpt-4o"
+    model: "gemini-flash-latest"
 }
 
 // Step 2: Classify seniority
@@ -108,7 +108,7 @@ ai fn classify_seniority(candidate: Candidate) -> Result<SeniorityLevel, AIError
         )
     ],
     temperature: 0.15,
-    model: "gpt-4o"
+    model: "gemini-flash-latest"
 }
 
 // Step 3: Evaluate fit for specific role
@@ -140,7 +140,7 @@ ai fn evaluate_fit_for_role(candidate: Candidate, job_title: String, job_require
         )
     ],
     temperature: 0.2,
-    model: "gpt-4o"
+    model: "gemini-flash-latest"
 }
 
 // Step 4: Generate hiring recommendation
@@ -148,7 +148,7 @@ ai fn generate_hiring_recommendation(candidate: Candidate, seniority: SeniorityL
     system_instruction: "You are the final hiring decision maker. Provide clear, actionable recommendations.",
     instruction: "Make a hiring recommendation for {candidate.name}.\n\nSeniority Assessment: {seniority.level} ({seniority.reasoning})\n\nRole Fit: {fit.verdict} - Score {fit.fit_score}/100\n\nRecommendation must be one of: Hire Immediately, Move to Next Round, Keep in Pipeline, Reject, Reconsider Later",
     temperature: 0.1,
-    model: "gpt-4o"
+    model: "gemini-flash-latest"
 }
 
 fn main() {
@@ -177,7 +177,9 @@ fn main() {
             Ok(extracted) => {
                 let candidate = extracted.value;
                 print("✓ Extracted: " + candidate.name);
-                print("  Experience: " + candidate.years_experience + " years");
+                print("  Experience: ");
+                print(candidate.years_experience);
+                print(" years");
                 print("  Last Role: " + candidate.last_role);
                 print("");
                 
@@ -196,7 +198,9 @@ fn main() {
                             Ok(fit_result) => {
                                 let fit = fit_result.value;
                                 print("✓ Fit Verdict: " + fit.verdict);
-                                print("  Score: " + fit.fit_score + "/100");
+                                print("  Score: ");
+                                print(fit.fit_score);
+                                print("/100");
                                 print("  Rationale: " + fit.rationale);
                                 print("");
                                 
