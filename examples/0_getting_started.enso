@@ -1,0 +1,47 @@
+// ========================================
+// EXAMPLE 0: Getting Started
+// Focus: Simple AI Integration
+// ========================================
+// 
+// This example demonstrates a simple AI function integration in Ensō.
+// It showcases how to define an AI function, handle its result,
+// and manage potential errors. Perfect for beginners getting started with Ensō.
+//
+// Check 0_getting_started_test.enso for tests (and how to import this file).
+
+// Struct definition for sentiment analysis result. This is the Intent of the AI function: what we want back.
+struct Sentiment {
+    mood: Enum<"Very Positive", "Positive", "Negative", "Very Negative", "Neutral">,
+    score: Int
+}
+
+// Simple AI function to analyze sentiment of input text. It returns a Result type to handle success and error cases.
+// Note: The `ai` keyword indicates this function leverages AI capabilities.
+ai fn analyze(text: String) -> Result<Sentiment, AIError> {
+    // Your AI instructions and model selection go here. This is the basic setup for the AI function.
+    // You can customize the instruction and model as needed (check next examples for more advanced usage).
+    instruction: "Analyze the sentiment."
+    model: "gemini-2.5-flash-lite"
+}
+
+// Optional main function.
+fn main() {
+    print("Running Analysis...");
+
+    // Simple call to the AI function with error handling.
+    let result = analyze("it was good, but some of the things didn't work, but I recommend!");
+
+    match result {
+        Ok(value) => {
+            // On success, print the sentiment mood and score.
+            print(value.value.mood);
+            print(value.value.score);
+        },
+        Err(error) => {
+            // On error, print error details.
+            print("Error occurred:");
+            print(error.kind);
+            print(error.message);
+        }
+    }
+}

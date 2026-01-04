@@ -1,0 +1,202 @@
+// ========================================
+// EXAMPLE 3: Large Context Windows & Web Agents
+// Focus: Processing Long Text, External Data, LLM as Brain
+// ========================================
+//
+// This example demonstrates how Ensō handles large context windows
+// by passing substantial text (fetched data, HTML, documents) to LLMs.
+// Perfect for: document analysis, web scraping results, log analysis.
+//
+// Note: This uses simulated fetch() since HTTP stdlib isn't ready yet.
+// In production, you'd call real APIs via Python integration.
+//
+// Features: Long context handling, external data processing, analysis
+
+struct PageSummary {
+    title: String,
+    main_topic: String,
+    key_points: List<String>,
+    sentiment: String
+}
+
+struct DocumentAnalysis {
+    document_type: Enum<"Tutorial", "Reference", "News", "Academic", "Blog", "Other">,
+    summary: String,
+    key_insights: List<String>,
+    action_items: List<String>
+}
+
+struct CompetitorAnalysis {
+    company_name: String,
+    market_position: String,
+    strengths: List<String>,
+    weaknesses: List<String>,
+    opportunities: List<String>
+}
+
+// Simulate fetching web content (in production: curl or requests lib)
+fn fetch_page(url: String) -> String {
+    // This is a simulation. In real world:
+    // - Use Python's requests library
+    // - Or curl via subprocess
+    // For now, return sample markdown document content
+    
+    if url == "https://docs.example.com/guide" {
+        return "# Python Web Framework Guide\n\n## Introduction\nPython web frameworks are libraries that simplify web development...\n\n## Popular Frameworks\n\n### Flask\nFlask is a lightweight, minimalist framework perfect for small to medium projects. It provides routing, templating, and request handling.\n\nPros:\n- Simple to learn\n- Highly extensible\n- Great for microservices\n\nCons:\n- Requires more manual setup\n- Less batteries included\n\n### Django\nDjango is a batteries-included framework with ORM, admin panel, and more.\n\nPros:\n- Everything included\n- Great documentation\n- Perfect for large projects\n\nCons:\n- Steeper learning curve\n- More overhead for small projects\n\n### FastAPI\nFastAPI is modern, fast, and great for APIs.\n\nPros:\n- Automatic API documentation\n- Type hints built-in\n- Very fast performance\n\nCons:\n- Newer ecosystem\n- Smaller community\n\n## Conclusion\nChoose based on your project size and team expertise.";
+    }
+    
+    return "[Simulated content for " + url + "]";
+}
+
+// Analyze webpage content: handles long HTML/text
+ai fn analyze_webpage(url: String) -> Result<PageSummary, AIError> {
+    system_instruction: "You are a web content analyst. Extract key information from the provided text.",
+    instruction: "Analyze this webpage content from {url} and provide title, main topic, key points, and sentiment. Content:\n\n{fetch_page(url)}",
+    temperature: 0.3,
+    model: "gpt-4o"
+}
+
+// Classify and summarize long documents
+ai fn classify_document(document_content: String) -> Result<DocumentAnalysis, AIError> {
+    system_instruction: "You are a document analyst. Classify documents and extract insights.",
+    instruction: "Analyze this document and classify it. Provide type, summary, key insights, and action items.\n\nDocument:\n{document_content}",
+    examples: [
+        (
+            document_content: "## How to Set Up Docker\n\nStep 1: Install Docker Desktop...\nStep 2: Verify installation...\nThis tutorial walks you through setting up containerization for your application.",
+            expected: DocumentAnalysis { 
+                document_type: "Tutorial", 
+                summary: "Step-by-step guide for Docker installation and setup", 
+                key_insights: [
+                    "Docker Desktop simplifies container management",
+                    "Verification step ensures proper installation"
+                ],
+                action_items: [
+                    "Download Docker Desktop",
+                    "Run verification commands",
+                    "Create first container"
+                ]
+            }
+        ),
+        (
+            document_content: "Our competitor TechCorp released version 2.0 with 50% faster processing. They now support 15 new integrations and have expanded to 3 new markets. Their pricing dropped 20%.",
+            expected: DocumentAnalysis { 
+                document_type: "News", 
+                summary: "Competitor TechCorp released major update with performance and pricing improvements", 
+                key_insights: [
+                    "Significant performance improvement (50%)",
+                    "Aggressive pricing strategy (20% reduction)",
+                    "Market expansion to 3 new regions"
+                ],
+                action_items: [
+                    "Review our competitive positioning",
+                    "Evaluate our pricing strategy",
+                    "Plan feature roadmap response"
+                ]
+            }
+        )
+    ],
+    temperature: 0.2,
+    model: "gpt-4o"
+}
+
+// Competitor intelligence: analyze from multiple sources
+ai fn analyze_competitor(company_name: String, research_data: String) -> Result<CompetitorAnalysis, AIError> {
+    system_instruction: "You are a competitive intelligence analyst. Provide unbiased assessment of competitors.",
+    instruction: "Analyze {company_name} based on this research data:\n\n{research_data}\n\nProvide market position, strengths, weaknesses, and opportunities.",
+    temperature: 0.1,
+    model: "gpt-4o"
+}
+
+fn main() {
+    print("=== LARGE CONTEXT WINDOW DEMO ===");
+    print("");
+    
+    // Example 1: Analyze webpage
+    print("--- WEBPAGE ANALYSIS ---");
+    match analyze_webpage("https://docs.example.com/guide") {
+        Ok(summary) => {
+            print("Title: " + summary.value.title);
+            print("Topic: " + summary.value.main_topic);
+            print("Sentiment: " + summary.value.sentiment);
+            print("");
+        },
+        Err(error) => {
+            print("Error analyzing page: " + error.message);
+            print("");
+        }
+    }
+    
+    // Example 2: Classify document
+    print("--- DOCUMENT CLASSIFICATION ---");
+    let sample_doc = "## Security Best Practices for Cloud\n\nEnsure all data is encrypted in transit and at rest. Use IAM roles for access control. Enable audit logging. Regular security patches are critical. Multi-factor authentication should be mandatory.";
+    
+    match classify_document(sample_doc) {
+        Ok(analysis) => {
+            print("Type: " + analysis.value.document_type);
+            print("Summary: " + analysis.value.summary);
+            print("");
+        },
+        Err(error) => {
+            print("Error classifying: " + error.message);
+            print("");
+        }
+    }
+    
+    // Example 3: Competitor analysis
+    print("--- COMPETITOR ANALYSIS ---");
+    let research = "TechCorp raised $50M Series B. They expanded to 5 new markets. Their platform now integrates with 25 services. Employee count doubled to 200. They're offering 30% discounts to enterprise customers.";
+    
+    match analyze_competitor("TechCorp", research) {
+        Ok(analysis) => {
+            print("Company: " + analysis.value.company_name);
+            print("Position: " + analysis.value.market_position);
+            print("");
+        },
+        Err(error) => {
+            print("Error in analysis: " + error.message);
+            print("");
+        }
+    }
+    
+    print("=== END ANALYSIS ===");
+}
+
+// ========================================
+// WHY THIS MATTERS
+// ========================================
+//
+// ✅ Large Context Windows:
+//    - Modern LLMs (GPT-4, Claude 3) support 100K+ tokens
+//    - Ensō passes entire documents/webpages to LLM
+//    - No need to chunk or summarize manually
+//
+// ✅ Perfect for:
+//    - Document Analysis: PDF, Word, Markdown processing
+//    - Competitive Intelligence: Analyze competitor websites
+//    - News Monitoring: Process article feeds
+//    - Log Analysis: Extract errors from system logs
+//    - Code Review: Analyze large codebases
+//    - Contract Analysis: Process legal documents
+//
+// ✅ Simulated Fetch:
+//    - This example uses fetch_page() function (simulated)
+//    - In production: use Python requests library
+//    - Future: HTTP stdlib in Ensō
+//
+// ✅ Structured Output:
+//    - Even with long input, output is type-safe
+//    - PageSummary forces specific keys
+//    - No parsing needed
+//
+// ✅ Cost Optimization:
+//    - Ensō tracks tokens: long context = higher cost
+//    - Can switch to cheaper model if accuracy allows
+//    - Cost visibility helps ROI calculation
+//
+// ✅ Use Case Example:
+//    Your startup monitors 100 competitor websites daily.
+//    Traditional: 100 documents → manual analysis (2 hours/day)
+//    Ensō: 100 documents → structured analysis in 30 seconds
+//    ROI: Your salary costs vs 30 seconds of compute
+//
+// RUN THIS: python enso.py run examples/3_large_context_web_agent.enso

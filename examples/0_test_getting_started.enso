@@ -1,10 +1,21 @@
-import "example.enso";
+// ========================================
+// EXAMPLE 0: Test Getting Started
+// Focus: Simple AI Test
+// ========================================
+// 
+// This example demonstrates a simple AI function test in Ensō and how to mock AI responses.
+//
+
+// Import struct and ai fn from 0_getting_started.enso
+import "0_getting_started.enso";
 
 test "Mocked Positive Flow" {
+    // Mock the analyze function to return a predefined Sentiment.
     mock analyze => Sentiment { mood: "Positive", score: 99 };
 
     let result = analyze("I hate this");
 
+    // Match the result and assert expected values.
     match result {
         Ok(probabilistic) => {
             assert probabilistic.value.score == 99;
@@ -17,10 +28,12 @@ test "Mocked Positive Flow" {
 }
 
 test "Mocked Negative Flow" {
+    // Mock the analyze function to return a predefined Sentiment.
     mock analyze => Sentiment { mood: "Negative", score: 20 };
 
     let result = analyze("This is terrible");
 
+    // Match the result and assert expected values.
     match result {
         Ok(probabilistic) => {
             assert probabilistic.value.score == 20;
