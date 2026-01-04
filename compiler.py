@@ -186,6 +186,16 @@ class AIError(BaseModel):
     cost: float
     model: str
     timestamp: Optional[str] = None
+    
+    def __str__(self):
+        result = "❌ " + str(self.kind) + ": " + str(self.message)
+        if self.details:
+            result = result + chr(10) + "   Details: " + str(self.details)
+        if self.model:
+            result = result + chr(10) + "   Model: " + str(self.model)
+        if self.cost and self.cost > 0:
+            result = result + chr(10) + "   Cost: $" + str(round(self.cost, 6))
+        return result
 
 class Result:
     # Base class for Result<T, E> (Ok or Err)
@@ -223,7 +233,10 @@ class Err(Result):
         self.error = error
     
     def __repr__(self):
-        return f"Err({self.error})"
+        return str(self.error)
+    
+    def __str__(self):
+        return str(self.error)
 
 def resolve_refs(schema):
     defs = schema.get('$defs', {})
@@ -408,8 +421,22 @@ class EnsoAgent:
                 ))
 
             print("\\n\033[92m\033[1mINFO:\033[0m Agent '" + self.name + "' -> " + self.model, file=sys.stderr)
-            raw_schema = response_model.model_json_schema()
-            clean_schema = resolve_refs(raw_schema)
+            
+            # Try to generate JSON schema
+            try:
+                raw_schema = response_model.model_json_schema()
+                clean_schema = resolve_refs(raw_schema)
+            except Exception as e:
+                error_msg = str(e)
+                if not error_msg or error_msg == "model_json_schema":
+                    error_msg = f"{type(e).__name__}: Unable to generate schema for response model"
+                return Err(AIError(
+                    kind=ErrorKind.INVALID_CONFIG_ERROR,
+                    message="Failed to generate response schema",
+                    details=error_msg,
+                    cost=0.0,
+                    model=self.model
+                ))
             
             # Build complete system prompt with examples
             system_prompt = self._build_system_prompt()
@@ -438,10 +465,17 @@ class EnsoAgent:
                 ))
             except Exception as e:
                 # Network/API errors
+                error_msg = str(e)
+                if "status" in error_msg.lower() or "http" in error_msg.lower():
+                    message = "HTTP/API error - check API key and model name"
+                elif "connection" in error_msg.lower():
+                    message = "Connection failed - check network and API endpoint"
+                else:
+                    message = "API request failed"
                 return Err(AIError(
                     kind=ErrorKind.API_ERROR,
-                    message="API request failed",
-                    details=str(e),
+                    message=message,
+                    details=error_msg,
                     cost=cost,
                     model=self.model
                 ))
@@ -582,6 +616,14 @@ class EnsoTransformer(Transformer):
         if vars_in_instr:
             instr = f'f{instr}'
         
+        # Extract response model from Result<T, E> return type
+        response_model = ret
+        if "__RESULT_TYPE__(" in ret:
+            # Extract the inner type from __RESULT_TYPE__(SomeType)__
+            match = re.search(r'__RESULT_TYPE__\(([^)]+)\)__', ret)
+            if match:
+                response_model = match.group(1)
+        
         # Build EnsoAgent arguments
         agent_args = [f'name="{name}"', f'instruction={instr}', f'model={model}']
         if system_instr:
@@ -595,7 +637,7 @@ class EnsoTransformer(Transformer):
         
         return f"""{examples_code}
 # Define response model for {name}
-{name}_response_model = {ret}
+{name}_response_model = {response_model}
 
 def {name}({arg_str}):
     global {name}_agent
@@ -804,10 +846,12 @@ if not '{func_name}_agent' in globals():
         return f"Literal[{options}]"
 
     def result_type(self, args):
-        """Result<T, E> becomes Union[Ok[T], Err[E]] in Python"""
+        """Result<T, E> -> extract T for response model, return type hint is Union[Ok, Err]"""
         ok_type = args[0]
         err_type = args[1]
-        return f"Union[Ok, Err]"  # Simplified: just return Union type hint
+        # Store the response type for AI functions (the T in Result<T, E>)
+        # Return a special marker that ai_fn_def can parse
+        return f"__RESULT_TYPE__({ok_type})__"
 
     def struct_init(self, args): return f"{args[0]}({', '.join(args[1:])})"
     def field_init(self, args): return f"{args[0]}={args[1]}"
