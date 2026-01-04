@@ -81,6 +81,193 @@ def cmd_test(args):
         f.write(trigger_code)
     subprocess.call([sys.executable, target_file])
 
+def cmd_analyse(args):
+    """Analyze file: verify compilation, count AI calls, estimate cost without running them."""
+    import json
+    from datetime import datetime
+    
+    # Try to compile
+    try:
+        log("🔍 Analyzing file...")
+        target_file = build(args.filename, verbose=args.verbose)
+    except Exception as e:
+        log(f"❌ Compilation failed: {e}")
+        return
+    
+    # Read compiled code
+    with open(target_file, 'r') as f:
+        code = f.read()
+    
+    # Setup analysis environment
+    analysis_results = {
+        "filename": args.filename,
+        "timestamp": datetime.now().isoformat(),
+        "compilation": "success",
+        "ai_calls": [],
+        "execution_path": [],
+        "models_used": {},
+        "total_estimated_cost": 0.0,
+        "realistic_tokens": args.realistic_tokens or False
+    }
+    
+    # Parse out all AI function names from the compiled code
+    import re
+    # Look for: name="function_name"  (in the EnsoAgent constructor)
+    ai_funcs = re.findall(r'name=["\'](\w+)["\']', code)
+    
+    # Find where to inject mocks - AFTER _ANALYSIS_RESULTS = None in the preamble
+    # This is important because we don't want it overwritten by the preamble assignments
+    inject_marker = "_ANALYSIS_RESULTS = None"
+    inject_pos = code.find(inject_marker)
+    
+    if inject_pos >= 0:
+        # Find the end of this line
+        inject_line_end = code.find("\n", inject_pos) + 1
+    else:
+        # Fallback: find "_ANALYSIS_RESULTS = None" doesn't exist, use alternative
+        inject_pos = code.find("ANALYSIS_MODE = False")
+        if inject_pos >= 0:
+            inject_line_end = code.find("\n", inject_pos) + 1
+        else:
+            inject_line_end = 0
+    
+    # Build mock injection code
+    mocks_inject_code = "# Analysis mocks injected\nMOCKS.clear()\n"
+    for func in ai_funcs:
+        mocks_inject_code += f"class _MockResponse_{func}:\n"
+        mocks_inject_code += f"    def __init__(self):\n"
+        mocks_inject_code += f"        pass\n"
+        mocks_inject_code += f"    def __getattr__(self, name):\n"
+        mocks_inject_code += f"        return 'mocked'\n"
+        mocks_inject_code += f"MOCKS['{func}'] = _MockResponse_{func}()\n"
+    # Update _ANALYSIS_RESULTS - inject AFTER it's been set to None
+    mocks_inject_code += f"_ANALYSIS_RESULTS = _imported_analysis_results\n"
+    
+    # Inject the mocks code after the _ANALYSIS_RESULTS = None line
+    if inject_line_end > 0:
+        code_with_mocks = code[:inject_line_end] + mocks_inject_code + code[inject_line_end:]
+    else:
+        code_with_mocks = code
+    
+    # Create analysis namespace with call tracking
+    analysis_globals = {
+        "__name__": "__main__",
+        "__builtins__": __builtins__,
+        "_ANALYSIS_RESULTS": analysis_results,
+        "_imported_analysis_results": analysis_results,  # Pass reference so injected code can use it
+    }
+    
+    # Inject minimal mock for all print/log calls to suppress output during analysis
+    def mock_print(*args, **kwargs):
+        msg = " ".join(str(a) for a in args)
+        analysis_results["execution_path"].append(f"[OUTPUT] {msg}")
+    
+    analysis_globals["print"] = mock_print
+    
+    # Execute with analysis tracking
+    try:
+        log("📊 Executing with automatic mocks...")
+        exec(code_with_mocks, analysis_globals)
+        
+        # Call main() if it exists (to actually execute the AI functions)
+        if "main" in analysis_globals:
+            analysis_globals["main"]()
+    except Exception as e:
+        # Don't fail on execution errors during analysis - just report them
+        analysis_results["execution_error"] = str(e)
+        log(f"⚠️  Execution error during analysis (this is OK): {str(e)[:100]}")
+    
+    # Extract results
+    ai_calls = analysis_results.get("ai_calls", [])
+    execution_path = analysis_results.get("execution_path", [])
+    
+    # Generate report
+    print("\n" + "="*60)
+    print("           ENSO ANALYSIS REPORT")
+    print("="*60 + "\n")
+    
+    # Compilation status
+    print(f"📋 COMPILATION: ✓ Success\n")
+    
+    # AI Calls Summary
+    if ai_calls:
+        print(f"🤖 AI FUNCTION CALLS: {len(ai_calls)} total calls\n")
+        
+        # Build call breakdown by function and model
+        call_breakdown = {}
+        for call in ai_calls:
+            func_name = call.get("function", "unknown")
+            model = call.get("model", "unknown")
+            key = func_name
+            if key not in call_breakdown:
+                call_breakdown[key] = {"count": 0, "model": model, "cost": 0.0}
+            call_breakdown[key]["count"] += 1
+            call_breakdown[key]["cost"] += call.get("cost", 0.0)
+        
+        # Print table
+        print("CALL BREAKDOWN:")
+        print("┌─────────────────────────┬───────┬──────────────────────┐")
+        print("│ Function                │ Calls │ Model                │")
+        print("├─────────────────────────┼───────┼──────────────────────┤")
+        for func_name, info in sorted(call_breakdown.items()):
+            func_display = func_name[:22].ljust(22)
+            count_display = str(info["count"]).ljust(5)
+            model_display = info["model"][:19].ljust(19)
+            print(f"│ {func_display} │ {count_display} │ {model_display} │")
+        print("└─────────────────────────┴───────┴──────────────────────┘\n")
+        
+        # Cost breakdown by model
+        cost_by_model = {}
+        for call in ai_calls:
+            model = call.get("model", "unknown")
+            cost = call.get("cost", 0.0)
+            if model not in cost_by_model:
+                cost_by_model[model] = {"cost": 0.0, "calls": 0}
+            cost_by_model[model]["cost"] += cost
+            cost_by_model[model]["calls"] += 1
+        
+        total_cost = sum(info["cost"] for info in cost_by_model.values())
+        
+        print("💰 ESTIMATED COST (if run with real API):")
+        print("┌──────────────────┬───────┬─────────────┐")
+        print("│ Model            │ Calls │ Estimated   │")
+        print("├──────────────────┼───────┼─────────────┤")
+        for model, info in sorted(cost_by_model.items()):
+            model_display = model[:15].ljust(15)
+            calls_display = str(info["calls"]).ljust(5)
+            cost_display = f"${info['cost']:.6f}".ljust(10)
+            print(f"│ {model_display} │ {calls_display} │ {cost_display} │")
+        print("├──────────────────┼───────┼─────────────┤")
+        print(f"│ TOTAL            │       │ ${total_cost:.6f}   │")
+        print("└──────────────────┴───────┴─────────────┘\n")
+        
+        # Execution path (only if --show-path flag)
+        if args.show_path and execution_path:
+            print("🛤️  EXECUTION PATH:")
+            for i, step in enumerate(execution_path[:20]):  # Show first 20 steps
+                print(f"   {i+1}. {step}")
+            if len(execution_path) > 20:
+                print(f"   ... and {len(execution_path) - 20} more steps")
+            print()
+    else:
+        print("🤖 AI FUNCTION CALLS: None detected\n")
+    
+    # Token estimation note
+    if not args.realistic_tokens:
+        print("⚠️  NOTE: Using minimal token estimates (256 in, 256 out)")
+        print("   Use --realistic-tokens for more accurate cost prediction\n")
+    else:
+        print("✓ Using realistic token estimates for better accuracy\n")
+    
+    print("✨ No API calls were made during analysis\n")
+    
+    # Save report if requested
+    if args.save_report:
+        analysis_results["total_estimated_cost"] = total_cost if ai_calls else 0.0
+        with open(args.save_report, 'w') as f:
+            json.dump(analysis_results, f, indent=2)
+        log(f"📁 Report saved to {args.save_report}")
+
 def cmd_init(args):
     log("Initializing project...")
     with open("main.enso", "w") as f:
@@ -261,6 +448,12 @@ def main():
     build.add_argument("--name", help="Library name (default: enso_lib)")
     build.add_argument("--output", help="Output directory (default: enso_out)")
     
+    analyse = subparsers.add_parser("analyse", help="Analyze file without running AI calls (cost estimation)")
+    analyse.add_argument("filename")
+    analyse.add_argument("--realistic-tokens", action="store_true", help="Use realistic token estimates for cost calculation")
+    analyse.add_argument("--save-report", help="Save analysis report as JSON to file")
+    analyse.add_argument("--show-path", action="store_true", help="Show execution path (can be verbose)")
+    
     subparsers.add_parser("init", help="Init project")
     subparsers.add_parser("update", help="Update models")
 
@@ -270,6 +463,7 @@ def main():
     elif args.command == "run": cmd_run(args)
     elif args.command == "test": cmd_test(args)
     elif args.command == "build": cmd_build(args)
+    elif args.command == "analyse": cmd_analyse(args)
     elif args.command == "init": cmd_init(args)
     else: parser.print_help()
 

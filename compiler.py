@@ -164,6 +164,8 @@ from abc import ABC, abstractmethod
 from enum import Enum
 
 MOCKS = {}
+ANALYSIS_MODE = False
+_ANALYSIS_RESULTS = None
 
 # ==========================================
 # ERROR HANDLING: Result<T, E> Model
@@ -404,11 +406,26 @@ class EnsoAgent:
         # Execute AI function and return Result<Probabilistic<T>, AIError>.
         # Categorizes all failures as AIError with proper ErrorKind.
         cost = 0.0
+        
+        # Track in analysis mode (if _ANALYSIS_RESULTS is set, we're in analysis)
+        if _ANALYSIS_RESULTS is not None:
+            _ANALYSIS_RESULTS["execution_path"].append(f"[CALL] {self.name}({self.model})")
+        
         try:
             # Check mocks first
             if self.name in MOCKS:
                 print(f"  \033[93m[Mock]\033[0m Serving response for '{self.name}'", file=sys.stderr)
                 mocked_value = MOCKS[self.name]
+                
+                # Track mock response in analysis
+                if _ANALYSIS_RESULTS is not None:
+                    _ANALYSIS_RESULTS["ai_calls"].append({
+                        "function": self.name,
+                        "model": self.model,
+                        "cost": 0.0,
+                        "source": "mock"
+                    })
+                
                 return Ok(Probabilistic(value=mocked_value, confidence=1.0, cost=0.0, model_used="MOCK"))
 
             # Validate configuration
@@ -502,6 +519,16 @@ class EnsoAgent:
             try:
                 val = response_model(**data)
                 print(f"  \033[96m💰 Cost: ${round(cost, 6)} | ⏱️  Latency: {round(latency, 2)}s\033[0m", file=sys.stderr)
+                
+                # Track in analysis mode
+                if _ANALYSIS_RESULTS is not None:
+                    _ANALYSIS_RESULTS["ai_calls"].append({
+                        "function": self.name,
+                        "model": self.model,
+                        "cost": cost,
+                        "source": "api"
+                    })
+                
                 return Ok(Probabilistic(value=val, confidence=0.99, cost=cost, model_used=self.model))
             except ValidationError as e:
                 return Err(AIError(

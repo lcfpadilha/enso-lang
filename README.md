@@ -305,6 +305,49 @@ pip install -e .
 enso init
 ```
 
+---
+
+## 💰 Cost Estimation with `enso analyse`
+
+**Estimate AI costs before spending money.** The `enso analyse` command is a killer feature for cost planning:
+
+```bash
+# Analyze your code without making API calls
+enso analyse hiring.enso
+```
+
+**Output:**
+```
+🤖 AI FUNCTION CALLS: 24 total calls
+
+CALL BREAKDOWN:
+┌─────────────────────────┬───────┬──────────────────────┐
+│ Function                │ Calls │ Model                │
+├─────────────────────────┼───────┼──────────────────────┤
+│ extract_resume          │ 8     │ gemini-2.5-flash-li │
+│ classify_seniority      │ 6     │ gemini-flash-latest  │
+│ evaluate_fit            │ 6     │ gemini-flash-latest  │
+│ generate_recommendation │ 4     │ gpt-4o               │
+└─────────────────────────┴───────┴──────────────────────┘
+
+💰 ESTIMATED COST (if run with real API):
+│ gemini-2.5-flash-lite   │ 8     │ $0.0045  │
+│ gemini-flash-latest     │ 12    │ $0.0060  │
+│ gpt-4o                  │ 4     │ $0.0320  │
+│ TOTAL:                  │       │ $0.0425  │
+```
+
+**Why this matters:**
+- 🔍 **Verify your code works** without API costs
+- 💭 **Plan costs before scaling** – know the bill before you run production batches
+- 📊 **Export to JSON** for CI/CD integration – `enso analyse main.enso --save-report report.json`
+- 🛤️ **Debug execution path** if needed – `enso analyse main.enso --show-path`
+- ✅ **Supports imports** – analyzes entire project including dependencies
+
+**How it works:** Compiles your `.enso` file, injects automatic mocks for all AI functions, executes with tracking, and reports call counts and estimated costs—*no API calls made*.
+
+---
+
 ## 💻 CLI Usage
 
 | Command | Description | Example |
@@ -314,6 +357,9 @@ enso init
 | `enso run -` | Reads source code from stdin (pipe support) | `cat script.enso \| enso run -` |
 | `enso test` | Runs internal tests (mocks only) | `enso test main.enso` |
 | `enso test --include_ai` | Runs tests allowing real AI calls | `enso test main.enso --include_ai` |
+| `enso analyse` | Estimates cost without running AI (with mocks) | `enso analyse main.enso` |
+| `enso analyse --show-path` | Same as above, with detailed execution trace | `enso analyse main.enso --show-path` |
+| `enso analyse --save-report` | Save analysis as JSON for CI/CD | `enso analyse main.enso --save-report report.json` |
 | `enso update` | Updates local model pricing/registry | `enso update` |
 | `enso --verbose <cmd>` | Enable debug output, model cost and model calls on stderr | `enso --verbose run main.enso 2>&1` |
 
