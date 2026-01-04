@@ -58,9 +58,9 @@ enso_grammar = r"""
     ai_body: instruction_stmt config_stmt* validate_block?
 
     // Regular Function (Imperative)
-    regular_fn_def: "fn" NAME "(" arg_list? ")" "->" type_expr "{" stmt_block "}"
+    regular_fn_def: "fn" NAME "(" arg_list? ")" ["->" type_expr] "{" stmt_block "}"
     stmt_block: statement*
-    
+
     // --- Testing ---
     test_def: "test" [test_type] STRING "{" test_body "}"
     test_type: "ai"
@@ -477,7 +477,14 @@ def run_tests(include_ai=False):
 # 3. THE TRANSPILER
 # ==========================================
 class EnsoTransformer(Transformer):
-    def start(self, items): return RUNTIME_PREAMBLE + "\n\n" + "\n\n".join(items)
+    def start(self, items):
+        # Filter out empty strings from bundled imports
+        items = [i for i in items if i and i.strip()]
+        
+        # Combine runtime preamble with all definitions/statements
+        code = RUNTIME_PREAMBLE + "\n\n" + "\n\n".join(items)
+
+        return code
     
     def struct_def(self, args):
         name, *fields = args

@@ -8,17 +8,19 @@ ai fn analyze(text: String) -> Result<Sentiment, AIError> {
     model: "gemini-2.5-flash-lite"
 }
 
-print("Running Analysis...");
-let result = analyze("it was good, but some of the things didn't work, but I recommend!");
+fn main() {
+    print("Running Analysis...");
+    let result = analyze("it was good, but some of the things didn't work, but I recommend!");
 
-match result {
-    Ok(value) => {
-        print(value.value.mood);
-        print(value.value.score);
-    },
-    Err(error) => {
-        print("Error occurred:");
-        print(error.kind);
-        print(error.message);
+    match result {
+        Ok(value) => {
+            print(value.value.mood);
+            print(value.value.score);
+        },
+        Err(error) => {
+            print("Error occurred:");
+            print(error.kind);
+            print(error.message);
+        }
     }
 }

@@ -44,6 +44,20 @@ def build(filepath):
 
 def cmd_run(args):
     target_file = build(args.filename)
+    # Check if main() exists in the compiled code
+    with open(target_file, 'r') as f:
+        code = f.read()
+    
+    if "def main(" in code:
+        # Call main() if it exists
+        trigger_code = "\n\nif __name__ == '__main__':\n    main()\n"
+    else:
+        # Otherwise just execute the script as-is (for backward compatibility with top-level statements)
+        trigger_code = ""
+    
+    with open(target_file, 'a') as f:
+        f.write(trigger_code)
+    
     subprocess.call([sys.executable, target_file])
 
 def cmd_test(args):

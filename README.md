@@ -25,7 +25,7 @@ struct Candidate {
 }
 
 // 2. Define your Intelligence (The "Declarative Logic")
-ai fn extract_resume(text: String) -> Candidate {
+ai fn extract_resume(text: String) -> Result<Candidate, AIError> {
     instruction: "Extract name and skills. Be strict with seniority levels."
     model: "gemini-flash-latest"
 }
@@ -36,12 +36,12 @@ fn main() {
     
     // The 'match' statement guarantees you handle success AND failure.
     match extract_resume(raw_text) {
-        Result::Ok(c) => {
-            print("Hired: " + c.name);
-        }
-        Result::Err(e) => {
+        Ok(candidate) => {
+            print("Hired: " + candidate.value.name);
+        },
+        Err(error) => {
             print("Parsing failed. Reason:");
-            print(e);
+            print(error.message);
         }
     }
 }
