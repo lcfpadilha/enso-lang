@@ -55,7 +55,7 @@ enso_grammar = r"""
 
     // AI Function (Declarative)
     ai_fn_def: "ai" "fn" NAME "(" arg_list? ")" "->" type_expr "{" ai_body "}"
-    ai_body: instruction_stmt config_stmt* validate_block?
+    ai_body: system_instruction_stmt? instruction_stmt (config_stmt | examples_block)* validate_block?
 
     // Regular Function (Imperative)
     regular_fn_def: "fn" NAME "(" arg_list? ")" ["->" type_expr] "{" stmt_block "}"
@@ -69,9 +69,13 @@ enso_grammar = r"""
     mock_stmt: "mock" NAME "=>" expr ";"
 
     // --- Details ---
-    instruction_stmt: "instruction" ":" STRING [","]
-    config_stmt: CONFIG_KEY ":" (NUMBER | STRING) [","]
-    CONFIG_KEY: "temperature" | "model"
+    system_instruction_stmt: "system_instruction" ":" STRING_WITH_VARS [","]
+    instruction_stmt: "instruction" ":" STRING_WITH_VARS [","]
+    examples_block: "examples" ":" "[" example_item* "]" [","]
+    example_item: "(" example_field ("," example_field)* ")" [","]
+    example_field: NAME ":" expr
+    config_stmt: CONFIG_KEY ":" (NUMBER | STRING | expr) [","]
+    CONFIG_KEY: "temperature" | "model" | "max_tokens" | "top_p" | "top_k"
     validate_block: "validate" "(" NAME ")" "{" validation_rule* "}"
     validation_rule: expr "=>" STRING [","]
 
@@ -117,9 +121,10 @@ enso_grammar = r"""
 
     // --- Terminals ---
     TYPE_NAME: /[A-Z][a-zA-Z_]\w*/
-    NAME: /(?!(?:let|print|return|if|else|for|in|import|struct|ai|fn|test|mock|assert|instruction|temperature|model|validate|List|Enum|Result|match|Ok|Err|concurrent)\b)[a-zA-Z_]\w*/
+    STRING_WITH_VARS: /"(?:[^"\\]|\\.|{[a-zA-Z_]\w*})*"/
     STRING: /"(?:[^"\\]|\\.)*"/
     NUMBER: /\d+(\.\d+)?/
+    NAME: /(?!(?:let|print|return|if|else|for|in|import|struct|ai|fn|test|mock|assert|instruction|temperature|model|validate|List|Enum|Result|match|Ok|Err|concurrent|system_instruction|examples)\b)[a-zA-Z_]\w*/
     
     OPERATOR: "==" | "!=" | ">=" | "<=" | "&&" | "||" | "+" | "-" | ">" | "<"
     
@@ -324,12 +329,42 @@ class Probabilistic(BaseModel):
     model_used: str
 
 class EnsoAgent:
-    def __init__(self, name, instruction, model="gpt-4o"):
+    def __init__(self, name, instruction, model="gpt-4o", system_instruction=None, examples=None, temperature=None, **kwargs):
         self.name = name
         self.instruction = instruction
+        self.system_instruction = system_instruction
+        self.examples = examples or []
+        self.temperature = temperature if temperature is not None else 0.1
         self.model = model
         self.spec = load_model_config(model)
         self.driver = get_driver(self.spec.get('type', 'openai'))
+        self.config = kwargs
+
+    def _build_system_prompt(self):
+        # Combine system instruction and few-shot examples into complete prompt.
+        parts = []
+
+        if self.system_instruction:
+            sys_instr = self.system_instruction
+            if sys_instr.startswith('"') or sys_instr.startswith("'"):
+                sys_instr = sys_instr[1:]
+            if sys_instr.endswith('"') or sys_instr.endswith("'"):
+                sys_instr = sys_instr[:-1]
+            parts.append(sys_instr)
+
+        if self.examples:
+            parts.append("\\n\\n--- Few-Shot Examples ---")
+            for i, example in enumerate(self.examples, 1):
+                parts.append(f"\\nExample {i}:")
+                # Format input fields
+                for key, value in example.items():
+                    if key != 'expected':
+                        parts.append(f"  {key}: {value}")
+                # Format expected output
+                if 'expected' in example:
+                    parts.append(f"  Expected: {example['expected']}")
+
+        return "\\n".join(parts)
 
     def _clean_json(self, raw: str) -> str:
         raw = raw.strip()
@@ -362,11 +397,15 @@ class EnsoAgent:
             print(f"\\n[Enso] Agent '{self.name}' -> {self.model}...")
             raw_schema = response_model.model_json_schema()
             clean_schema = resolve_refs(raw_schema)
+            
+            # Build complete system prompt with examples
+            system_prompt = self._build_system_prompt()
+            final_instruction = f"{system_prompt}\\n\\n{self.instruction}" if system_prompt else self.instruction
 
             # Call driver with error handling
             try:
                 start_t = time.time()
-                raw_json = self.driver.complete(self.model, self.instruction, input_text, clean_schema)
+                raw_json = self.driver.complete(self.model, final_instruction, input_text, clean_schema)
                 latency = time.time() - start_t
             except ValueError as e:
                 # Invalid config (missing API keys, etc)
@@ -494,17 +533,60 @@ class EnsoTransformer(Transformer):
     def ai_fn_def(self, args):
         if len(args) == 4: arg_str, ret, body = args[1], args[2], args[3]
         else: arg_str, ret, body = "", args[1], args[2]
+        
+        name = args[0]
         instr = body['instruction']
         model = body.get('model', '"gpt-4o"')
-        name = args[0]
+        system_instr = body.get('system_instruction', None)
+        examples = body.get('examples', None)
+        temperature = body.get('temperature', None)
         
-        return f"""
+        # Extract parameter names from arg_str
+        param_names = []
+        if arg_str:
+            for param in arg_str.split(','):
+                param_name = param.split(':')[0].strip()
+                if param_name:
+                    param_names.append(param_name)
+        
+        # Validate interpolation variables
+        import re
+        instr_str = instr.strip('"\'f')
+        vars_in_instr = re.findall(r'{([a-zA-Z_]\w*)}', instr_str)
+        undefined_vars = set(vars_in_instr) - set(param_names)
+        if undefined_vars:
+            raise ValueError(f"Undefined variables in instruction: {undefined_vars}")
+        
+        # Generate examples hoisting code
+        examples_code = ""
+        if examples:
+            examples_list = []
+            for ex in examples:
+                examples_list.append(ex)
+            examples_code = f"\n{name}_examples = {examples_list}\n"
+        
+        # Convert instruction string to f-string if it has variables
+        if vars_in_instr:
+            instr = f'f{instr}'
+        
+        # Build EnsoAgent arguments
+        agent_args = [f'name="{name}"', f'instruction={instr}', f'model={model}']
+        if system_instr:
+            agent_args.insert(1, f'system_instruction={system_instr}')
+        if examples:
+            agent_args.append(f'examples={name}_examples')
+        if temperature:
+            agent_args.append(f'temperature={temperature}')
+        
+        agent_args_str = ", ".join(agent_args)
+        
+        return f"""{examples_code}
 # Define response model for {name}
 {name}_response_model = {ret}
 
 def {name}({arg_str}):
     global {name}_agent
-    {name}_agent = EnsoAgent(name="{name}", instruction={instr}, model={model})
+    {name}_agent = EnsoAgent({agent_args_str})
     # Filter variables to only send arguments, not the agent itself
     inputs = {{k:v for k,v in locals().items() if k != '{name}_agent' and not k.startswith('__')}}
     return {name}_agent.run(str(inputs), {name}_response_model)
@@ -515,6 +597,25 @@ def {name}({arg_str}):
         for x in args: 
             if isinstance(x, dict): d.update(x)
         return d
+    
+    def system_instruction_stmt(self, args):
+        return {"system_instruction": args[0]}
+    
+    def examples_block(self, args):
+        return {"examples": args}
+    
+    def example_item(self, args):
+        # args is a list of example_field dicts
+        result = {}
+        for field_dict in args:
+            result.update(field_dict)
+        return result
+    
+    def example_field(self, args):
+        # args[0] is field name, args[1] is expr value
+        field_name = args[0]
+        field_value = args[1]
+        return {field_name: field_value}
 
     def regular_fn_def(self, args):
         # args: [name, arg_list, type_expr, stmt_block] OR [name, type_expr, stmt_block]
@@ -741,6 +842,10 @@ class SchemaExtractor(Transformer):
     def NUMBER(self, t): return str(t)
     def ai_body(self, t): return None
     def instruction_stmt(self, t): return None
+    def system_instruction_stmt(self, t): return None
+    def examples_block(self, t): return None
+    def example_item(self, t): return None
+    def example_field(self, t): return None
     def config_stmt(self, t): return None
     def validate_block(self, t): return None
     def call_expr(self, t): return None
