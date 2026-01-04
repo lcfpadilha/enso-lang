@@ -64,6 +64,37 @@ Skill: Kung Fu
 Skill: Python
 ```
 
+### Learn the Syntax
+
+👉 **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** - Complete grammar guide with all syntax rules, types, functions, and best practices. **Start here for syntax questions.**
+
+---
+
+## 📚 Cookbook Examples
+
+The `examples/` folder contains **production-ready examples** that serve as a cookbook for common use cases. Each example demonstrates real-world patterns you can adapt for your own projects:
+
+| Example | Focus | Use Cases |
+|---------|-------|----------|
+| **1. Structured Data Extraction** | Type-safe extraction, batch processing | Resume parsing, form filling, data migration, document processing |
+| **2. Classification & Decision Making** | Enums, constrained outputs, moderation | Sentiment analysis, content moderation, email routing, ticket classification |
+| **3. Large Context Windows** | Long document processing, web agents | Document analysis, competitive intelligence, log analysis, research |
+| **4. Complete Hiring Workflow** | Full pipeline, multiple AI functions | End-to-end hiring automation, multi-step decision making |
+
+**Try them all:**
+```bash
+enso run examples/1_structured_data_extraction.enso
+enso run examples/2_classification_decision_making.enso
+enso run examples/3_large_context_web_agent.enso
+enso run examples/4_complete_hiring_workflow.enso
+```
+
+Each example includes:
+- ✅ Real-world scenario
+- ✅ Production-ready code
+- ✅ Comments explaining the pattern
+- ✅ Runnable with `enso.py run` command
+
 ---
 
 ## Why Ensō?
@@ -167,6 +198,72 @@ test "Batch Processing" {
 
 ---
 
+## 🚀 Prompt Engineering Superpowers
+
+Ensō  includes powerful features for advanced prompt engineering, enabling you to build AI systems with more accuracy.
+
+### 1. Variable Interpolation
+
+Inject function parameters directly into your prompts:
+
+```rust
+ai fn extract(resume: String, target_role: String) -> Candidate {
+    instruction: "Extract {target_role} candidate from resume: {resume}",
+    model: "gpt-4o"
+}
+
+// Automatically becomes:
+// "Extract Senior Backend Engineer candidate from resume: John: 10y Python..."
+```
+
+### 2. System Instructions
+
+Separate role-based context from task instructions:
+
+```rust
+ai fn assess_fit(resume: String, company_culture: String) -> Candidate {
+    system_instruction: "You are a world-class technical recruiter with 20 years of experience.",
+    instruction: "Assess fit for our {company_culture} team. Resume: {resume}",
+    model: "gpt-4o"
+}
+```
+
+### 3. Few-Shot Examples
+
+Include examples to dramatically improve accuracy:
+
+```rust
+ai fn match_candidate(resume: String, seniority: String) -> Candidate {
+    system_instruction: "You are a top technical recruiter.",
+    instruction: "Match {seniority} candidate. Resume: {resume}",
+    
+    // Few-shot examples guide the LLM
+    examples: [
+        (
+            resume: "John: 10y Python, led 3 teams, mentored 5+ engineers",
+            seniority: "Senior",
+            expected: Candidate { 
+                name: "John", 
+                match_score: 92 
+            }
+        ),
+        (
+            resume: "Jane: Fresh grad, bootcamp, 1 toy project",
+            seniority: "Senior",
+            expected: Candidate { 
+                name: "Jane", 
+                match_score: 15 
+            }
+        )
+    ],
+    
+    temperature: 0.1,  // Low temperature for structured outputs
+    model: "gpt-4o"
+}
+```
+
+---
+
 ## 🏗 Architecture
 
 Ensō is a **Transpiled Language**.
@@ -259,7 +356,9 @@ These features are designed but deferred for post-MVP iterations:
 - [ ] **Type Stubs (.pyi)** – For better IDE autocomplete and type checking
 
 ### Language Features
-- [ ] **Variable Interpolation in Prompts** – `"Analyze {text} with context {context}"`
+- [x] **✅ Variable Interpolation in Prompts** – `"Analyze {text} with context {context}"` (DONE)
+- [x] **✅ System Instructions** – Separate role context from task instructions (DONE)
+- [x] **✅ Few-Shot Examples** – Guide LLM with examples for better accuracy (DONE)
 - [ ] **Multi-Model Routing** – Route based on cost/latency/capability
   - `model: select("gpt-4o" if complex else "gpt-4o-mini")`
 - [ ] **Streaming Responses** – Stream tokens for real-time feedback
