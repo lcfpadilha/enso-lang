@@ -56,12 +56,10 @@ enso run hiring.enso
 ### Output
 
 ```text
---- Parsing ---
-[Enso] Agent 'extract_resume' -> gemini-flash-latest...
-    [Meta] Cost: $0.00012 | Latency: 1.2s
-Name: Neo
-Skill: Kung Fu
-Skill: Python
+INFO: Agent 'extract_resume' -> gemini-flash-latest
+  💰 Cost: $0.000528 | ⏱️  Latency: 1.15s
+
+Hired: Neo
 ```
 
 ### Learn the Syntax
