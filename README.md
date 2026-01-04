@@ -235,4 +235,49 @@ Enso files (`.enso`) have full syntax highlighting support in VS Code.
 
 ---
 
+## 📋 Phase 2: Future Roadmap
+
+These features are designed but deferred for post-MVP iterations:
+
+### Result Type Enhancements
+- [ ] **Monadic Operations** – Add `bind()` / `flatMap()` for composing Result-returning operations
+  - Enables: `analyze(text).bind(classify).bind(score)` for chaining without explicit matching
+- [ ] **Advanced Type Checks** – Better pattern matching with guards
+  - Enables: `result.is_ok()`
+
+### Concurrency Improvements
+- [ ] **Per-Item Timeouts** – Configure timeout per concurrent item
+- [ ] **Progress Callbacks** – Monitor long-running batch operations
+- [ ] **Automatic Retry Logic** – Retry failed items with exponential backoff
+- [ ] **Rate Limiting** – Control QPS to avoid API throttling
+
+### Library Generation
+- [ ] **`pub fn` Visibility** – Mark functions for export vs. internal-only
+- [ ] **Module Hierarchy** – Preserve directory structure in generated package
+  - `src/sentiments.enso` → `ai_lib.sentiments.analyze()`
+- [ ] **Auto-Generated Docstrings** – Extract from instructions for IDE tooltips
+- [ ] **Type Stubs (.pyi)** – For better IDE autocomplete and type checking
+
+### Language Features
+- [ ] **Variable Interpolation in Prompts** – `"Analyze {text} with context {context}"`
+- [ ] **Multi-Model Routing** – Route based on cost/latency/capability
+  - `model: select("gpt-4o" if complex else "gpt-4o-mini")`
+- [ ] **Streaming Responses** – Stream tokens for real-time feedback
+- [ ] **Prompt Caching** – Reuse expensive prompt prefixes across calls
+- [ ] **Tool Use / Function Calling** – Define functions for LLM to call back
+
+### Developer Experience
+- [ ] **SDK Generation** – Generate TypeScript/Go SDKs from Ensō definitions
+- [ ] **Observability** – Built-in tracing, cost reporting, analytics
+- [ ] **Local Development** – Mock LLM responses with recorded interactions
+- [ ] **Hot Reload** – Modify Ensō files and restart without recompiling
+
+### Performance & Reliability
+- [ ] **Compiled Binaries** – Compile to native binaries (PyO3 / maturin)
+- [ ] **Better Error Messages** – With suggestions and error codes
+- [ ] **Cost Forecasting** – Estimate total cost before running batch
+- [ ] **Circuit Breaker** – Fail-safe when errors exceed threshold
+
+---
+
 *Ensō is currently in Alpha. Built for the stress test of the future.*
