@@ -29,7 +29,6 @@ from core.grammar import enso_grammar
 from core.transformer import EnsoTransformer
 from core.introspection import SchemaExtractor
 
-# Re-export for backward compatibility
 __all__ = [
     'compile_source',
     'analyze_source',
@@ -57,10 +56,6 @@ def debug_log(message):
 # ==========================================
 # COMPILE AND ANALYZE FUNCTIONS
 # ==========================================
-# Note: EnsoTransformer and SchemaExtractor are now in core/transformer.py
-# and core/introspection.py respectively. The runtime preamble is generated
-# by core/runtime/get_preamble().
-
 def compile_source(file_path, source_code=None):
     """
     Compile Ensō source code to executable Python.
