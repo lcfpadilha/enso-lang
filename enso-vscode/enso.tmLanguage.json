@@ -4,60 +4,144 @@
   "fileTypes": ["enso"],
   "patterns": [
     { "include": "#comments" },
-    { "include": "#keywords" },
-    { "include": "#types" },
     { "include": "#strings" },
     { "include": "#numbers" },
-    { "include": "#operators" }
+    { "include": "#operators" },
+    { "include": "#keywords" },
+    { "include": "#control-flow" },
+    { "include": "#ai-config" },
+    { "include": "#imports" },
+    { "include": "#structs" },
+    { "include": "#ai-functions" },
+    { "include": "#regular-functions" },
+    { "include": "#tests" },
+    { "include": "#types" }
   ],
   "repository": {
     "comments": {
       "patterns": [
         {
-          "name": "comment.line.double-slash.enso",
+          "name": "comment.line.double-slash",
           "match": "//.*$"
         },
         {
-          "name": "comment.block.enso",
+          "name": "comment.line.hash",
+          "match": "#.*$"
+        },
+        {
+          "name": "comment.block",
           "begin": "/\\*",
           "end": "\\*/"
+        }
+      ]
+    },
+    "imports": {
+      "patterns": [
+        {
+          "match": "\\b(import)\\s+([\"'].+[\"'])\\s*;",
+          "captures": {
+            "1": { "name": "keyword.control" },
+            "2": { "name": "string.quoted.double" }
+          }
+        }
+      ]
+    },
+    "structs": {
+      "patterns": [
+        {
+          "match": "\\b(struct)\\s+([A-Z][a-zA-Z0-9_]*)\\s*\\{",
+          "captures": {
+            "1": { "name": "keyword.control" },
+            "2": { "name": "entity.name.class" }
+          }
+        }
+      ]
+    },
+    "ai-functions": {
+      "patterns": [
+        {
+          "match": "\\b(ai)\\s+(fn)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(",
+          "captures": {
+            "1": { "name": "keyword.control" },
+            "2": { "name": "keyword.control" },
+            "3": { "name": "entity.name.function" }
+          }
+        }
+      ]
+    },
+    "regular-functions": {
+      "patterns": [
+        {
+          "match": "\\b(fn)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(",
+          "captures": {
+            "1": { "name": "keyword.control" },
+            "2": { "name": "entity.name.function" }
+          }
+        }
+      ]
+    },
+    "tests": {
+      "patterns": [
+        {
+          "match": "\\b(test)\\s+(?:(ai)\\s+)?([\"'].*?[\"'])",
+          "captures": {
+            "1": { "name": "keyword.control" },
+            "2": { "name": "keyword.control" },
+            "3": { "name": "string.quoted.double" }
+          }
         }
       ]
     },
     "keywords": {
       "patterns": [
         {
-          "name": "keyword.control.enso",
-          "match": "\\b(let|fn|ai|struct|test|if|else|for|in|return|import|mock|assert|instruction|validate|model|temperature|match|concurrent)\\b"
+          "name": "keyword.control",
+          "match": "\\b(let|fn|ai|struct|test|in|import|mock|assert|concurrent|print)\\b"
         },
         {
-          "name": "keyword.control.error.enso",
+          "name": "keyword.constant",
           "match": "\\b(Ok|Err)\\b"
+        }
+      ]
+    },
+    "control-flow": {
+      "patterns": [
+        {
+          "name": "keyword.control",
+          "match": "\\b(match|if|else|for|while|return|break|continue)\\b"
+        }
+      ]
+    },
+    "ai-config": {
+      "patterns": [
+        {
+          "name": "keyword.control",
+          "match": "\\b(system_instruction|instruction|examples|validate|model|temperature|max_tokens|top_p|top_k)\\b"
         }
       ]
     },
     "types": {
       "patterns": [
         {
-          "name": "storage.type.enso",
+          "name": "storage.type",
           "match": "\\b(String|Int|Float|List|Enum|Result|AIError|ErrorKind)\\b"
-        },
-        {
-          "name": "entity.name.type.enso",
-          "match": "\\b[A-Z][a-zA-Z0-9_]*\\b"
         }
       ]
     },
     "strings": {
       "patterns": [
         {
-          "name": "string.quoted.double.enso",
+          "name": "string.quoted.double",
           "begin": "\"",
           "end": "\"",
           "patterns": [
             {
-              "name": "constant.character.escape.enso",
+              "name": "constant.character.escape",
               "match": "\\\\."
+            },
+            {
+              "name": "variable.parameter",
+              "match": "\\{[a-zA-Z_][a-zA-Z0-9_]*\\}"
             }
           ]
         }
@@ -66,16 +150,20 @@
     "numbers": {
       "patterns": [
         {
-          "name": "constant.numeric.enso",
-          "match": "\\b\\d+(\\.\\d+)?\\b"
+          "name": "constant.numeric.float",
+          "match": "\\b\\d+\\.\\d+\\b"
+        },
+        {
+          "name": "constant.numeric",
+          "match": "\\b\\d+\\b"
         }
       ]
     },
     "operators": {
       "patterns": [
         {
-          "name": "keyword.operator.enso",
-          "match": "(->|=>|==|!=|>=|<=|&&|\\|\\||[+\\-*/])"
+          "name": "keyword.operator",
+          "match": "(=|==|!=|>=|<=|>|<|->|=>|&&|\\|\\||\\+|-|\\*|/)"
         }
       ]
     }
