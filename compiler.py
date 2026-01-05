@@ -387,7 +387,13 @@ class LLMDriver(ABC):
 class OpenAIDriver(LLMDriver):
     def complete(self, model: str, system: str, user: str, schema: Dict) -> str:
         api_key = os.environ.get("OPENAI_API_KEY")
-        if not api_key: raise ValueError("Missing OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "Missing OPENAI_API_KEY. "
+                "Set it with: export OPENAI_API_KEY='your-key-here'. "
+                "Get key at: https://platform.openai.com/api-keys"
+            )
+        
         url = "https://api.openai.com/v1/chat/completions"
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         system_prompt = f"{system}\\n\\nYou MUST return valid JSON matching this schema:\\n{json.dumps(schema)}"
@@ -398,17 +404,42 @@ class OpenAIDriver(LLMDriver):
             "temperature": 0.1
         }
         try:
-            resp = requests.post(url, json=payload, headers=headers)
+            resp = requests.post(url, json=payload, headers=headers, timeout=30)
             resp.raise_for_status()
             return resp.json()['choices'][0]['message']['content']
+        except requests.exceptions.Timeout:
+            raise TimeoutError("OpenAI API request timed out (30s). Try again or check your network.")
+        except requests.exceptions.ConnectionError:
+            raise Exception("Failed to connect to OpenAI API. Check your internet connection and API endpoint.")
+        except requests.exceptions.HTTPError as e:
+            status = resp.status_code if 'resp' in locals() else "unknown"
+            if status == 401:
+                raise ValueError("Invalid OpenAI API key. Check OPENAI_API_KEY environment variable.")
+            elif status == 429:
+                raise Exception(
+                    "OpenAI rate limit exceeded. "
+                    "Wait a minute before retrying or upgrade at https://platform.openai.com/account/billing/overview"
+                )
+            elif status == 500:
+                raise Exception("OpenAI server error (500). Their service may be down. Try again in a moment.")
+            else:
+                error_detail = resp.text if 'resp' in locals() else str(e)
+                raise Exception(f"OpenAI API error ({status}): {error_detail}")
         except Exception as e:
-            if 'resp' in locals(): print(f"    [Details] {resp.text}", file=sys.stderr)
+            if 'resp' in locals() and hasattr(resp, 'text'):
+                print(f"    [Details] {resp.text}", file=sys.stderr)
             raise e
 
 class GeminiDriver(LLMDriver):
     def complete(self, model: str, system: str, user: str, schema: Dict) -> str:
         api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key: raise ValueError("Missing GEMINI_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "Missing GEMINI_API_KEY. "
+                "Set it with: export GEMINI_API_KEY='your-key-here'. "
+                "Get key at: https://aistudio.google.com/app/apikey"
+            )
+        
         api_key = api_key.strip()
         clean_model = model.replace('"', '').replace("'", "").strip()
         
@@ -423,12 +454,42 @@ class GeminiDriver(LLMDriver):
         }
 
         try:
-            resp = requests.post(url, json=payload)
+            resp = requests.post(url, json=payload, timeout=30)
             resp.raise_for_status()
             return resp.json()['candidates'][0]['content']['parts'][0]['text']
+        except requests.exceptions.Timeout:
+            raise TimeoutError("Gemini API request timed out (30s). Try again or check your network.")
+        except requests.exceptions.ConnectionError:
+            raise Exception("Failed to connect to Gemini API. Check your internet connection and API endpoint.")
+        except requests.exceptions.HTTPError as e:
+            status = resp.status_code if 'resp' in locals() else "unknown"
+            if status == 400:
+                raise ValueError(
+                    "Gemini API error: Invalid request. Check model name and schema. "
+                    "Valid models: gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.0-flash"
+                )
+            elif status == 401:
+                raise ValueError("Invalid Gemini API key. Check GEMINI_API_KEY environment variable.")
+            elif status == 403:
+                raise ValueError(
+                    "Gemini API access denied. Check: API enabled in GCP Console, valid API key, region restrictions."
+                )
+            elif status == 429:
+                raise Exception(
+                    "Gemini free tier rate limit exceeded (60 requests/min). "
+                    "Consider waiting or upgrading at https://ai.google.dev/pricing"
+                )
+            elif status == 500:
+                raise Exception("Gemini API server error (500). Their service may be down. Try again in a moment.")
+            else:
+                error_detail = resp.text if 'resp' in locals() else str(e)
+                raise Exception(f"Gemini API error ({status}): {error_detail}")
         except Exception as e:
-            print(f"    [Error] Gemini Connection Failed: {url}", file=sys.stderr)
-            if 'resp' in locals(): print(f"    [Details] {resp.text}", file=sys.stderr)
+            if 'resp' in locals() and hasattr(resp, 'text'):
+                try:
+                    print(f"    [Details] {resp.text}", file=sys.stderr)
+                except:
+                    pass
             raise e
 
 class LocalDriver(LLMDriver):
@@ -564,34 +625,56 @@ class EnsoAgent:
                 raw_json = self.driver.complete(self.model, final_instruction, input_text, clean_schema)
                 latency = time.time() - start_t
             except ValueError as e:
-                # Invalid config (missing API keys, etc)
+                # Invalid config (missing API keys, invalid models, etc)
+                error_msg = str(e)
                 return Err(AIError(
                     kind=ErrorKind.INVALID_CONFIG_ERROR,
-                    message=str(e),
+                    message=error_msg,
                     cost=0.0,
                     model=self.model
                 ))
             except TimeoutError as e:
                 return Err(AIError(
                     kind=ErrorKind.TIMEOUT_ERROR,
-                    message="Request timeout",
+                    message="API request timeout",
                     details=str(e),
                     cost=cost,
                     model=self.model
                 ))
             except Exception as e:
-                # Network/API errors
+                # Network/API errors - provide helpful context
                 error_msg = str(e)
-                if "status" in error_msg.lower() or "http" in error_msg.lower():
-                    message = "HTTP/API error - check API key and model name"
-                elif "connection" in error_msg.lower():
-                    message = "Connection failed - check network and API endpoint"
+                
+                # Categorize the error for better messaging
+                if "rate" in error_msg.lower() or "429" in error_msg:
+                    kind = ErrorKind.API_ERROR
+                    message = "Rate limit exceeded - too many requests"
+                elif "timeout" in error_msg.lower():
+                    kind = ErrorKind.TIMEOUT_ERROR
+                    message = "Request took too long - try again"
+                elif "connection" in error_msg.lower() or "network" in error_msg.lower():
+                    kind = ErrorKind.API_ERROR
+                    message = "Network connection failed"
+                elif "401" in error_msg or "unauthorized" in error_msg.lower():
+                    kind = ErrorKind.INVALID_CONFIG_ERROR
+                    message = "Invalid API key"
+                elif "403" in error_msg or "forbidden" in error_msg.lower():
+                    kind = ErrorKind.INVALID_CONFIG_ERROR
+                    message = "API access denied - check permissions"
+                elif "404" in error_msg or "not found" in error_msg.lower():
+                    kind = ErrorKind.INVALID_CONFIG_ERROR
+                    message = "Model not found - check model name"
+                elif "500" in error_msg:
+                    kind = ErrorKind.API_ERROR
+                    message = "API server error - try again later"
                 else:
+                    kind = ErrorKind.API_ERROR
                     message = "API request failed"
+                
                 return Err(AIError(
-                    kind=ErrorKind.API_ERROR,
+                    kind=kind,
                     message=message,
-                    details=error_msg,
+                    details=error_msg[:200],  # Truncate very long error messages
                     cost=cost,
                     model=self.model
                 ))
