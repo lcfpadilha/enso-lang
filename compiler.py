@@ -115,6 +115,56 @@ def detect_common_error_patterns(source_code, error_msg):
     
     return None, None
 
+def validate_break_continue(source_code):
+    """Validate that break/continue only appear inside loops (for, while, etc)."""
+    lines = source_code.split('\n')
+    
+    # Track which brace levels correspond to for loops
+    for_loop_stack = []  # Stack of brace depths that are for loop bodies
+    current_brace_depth = 0
+    
+    for line_num, line in enumerate(lines, 1):
+        stripped = line.strip()
+        
+        # Skip empty lines and comments
+        if not stripped or stripped.startswith('//') or stripped.startswith('#'):
+            continue
+        
+        # Track if this line contains a 'for' statement
+        has_for = bool(re.search(r'\bfor\s+\w+\s+in\b', stripped))
+        
+        # Process braces in this line
+        for i, char in enumerate(stripped):
+            if char == '{':
+                if has_for:
+                    # This opening brace starts a for loop body
+                    for_loop_stack.append(current_brace_depth)
+                current_brace_depth += 1
+            elif char == '}':
+                current_brace_depth -= 1
+                if current_brace_depth < 0:
+                    current_brace_depth = 0
+                # Check if we're closing a for loop
+                if for_loop_stack and for_loop_stack[-1] == current_brace_depth:
+                    for_loop_stack.pop()
+        
+        # Check for break/continue on this line
+        if re.search(r'\b(break|continue)\s*;', stripped):
+            # We're at break/continue if current_brace_depth is inside any for loop
+            in_for_loop = len(for_loop_stack) > 0
+            
+            if not in_for_loop:
+                keyword = "break" if "break" in stripped else "continue"
+                suggestion = f"'{keyword}' can only be used inside a 'for' loop"
+                raise EnsoCompileError(
+                    f"'{keyword}' statement outside of loop",
+                    line_number=line_num,
+                    context=stripped,
+                    suggestion=suggestion
+                )
+    
+    return True
+
 # ==========================================
 # 0. THE BUNDLER (New Feature)
 # ==========================================
@@ -202,13 +252,15 @@ enso_grammar = r"""
     arg_def: NAME ":" type_expr
 
     // --- Statements ---
-    statement: let_stmt | assign_stmt | print_stmt | return_stmt | if_stmt | for_stmt | match_stmt | concurrent_stmt | assertion | expr_stmt
+    statement: let_stmt | assign_stmt | print_stmt | return_stmt | if_stmt | for_stmt | match_stmt | concurrent_stmt | assertion | break_stmt | continue_stmt | expr_stmt
 
     let_stmt: "let" NAME "=" expr ";"
     concurrent_stmt: "concurrent" call_expr "for" NAME "in" expr ";"
     assign_stmt: NAME "=" expr ";"
     print_stmt: "print" "(" expr ")" ";"
     return_stmt: "return" expr ";"
+    break_stmt: "break" ";"
+    continue_stmt: "continue" ";"
     if_stmt: "if" expr "{" stmt_block "}" ("else" "{" stmt_block "}")?
     for_stmt: "for" NAME "in" expr "{" stmt_block "}"
     match_stmt: "match" expr "{" match_arm* "}"
@@ -236,7 +288,7 @@ enso_grammar = r"""
     STRING_WITH_VARS: /"(?:[^"\\]|\\.|{[a-zA-Z_]\w*})*"/
     STRING: /"(?:[^"\\]|\\.)*"/
     NUMBER: /\d+(\.\d+)?/
-    NAME: /(?!(?:let|print|return|if|else|for|in|import|struct|ai|fn|test|mock|assert|instruction|temperature|model|validate|List|Enum|Result|match|Ok|Err|concurrent|system_instruction|examples)\b)[a-zA-Z_]\w*/
+    NAME: /(?!(?:let|print|return|if|else|for|in|import|struct|ai|fn|test|mock|assert|instruction|temperature|model|validate|List|Enum|Result|match|Ok|Err|concurrent|system_instruction|examples|break|continue)\b)[a-zA-Z_]\w*/
     
     OPERATOR: "==" | "!=" | ">=" | "<=" | "&&" | "||" | "+" | "-" | ">" | "<"
     
@@ -961,6 +1013,12 @@ if not '{func_name}_agent' in globals():
     def return_stmt(self, args):
         return f"return {args[0]}"
     
+    def break_stmt(self, args):
+        return "break"
+    
+    def continue_stmt(self, args):
+        return "continue"
+    
     def match_stmt(self, args):
         # Translate match expressions to Python if/elif chains.
         expr = args[0]
@@ -1160,6 +1218,12 @@ def compile_source(file_path, source_code=None):
         full_source = source_code
     
     debug_log(f"Compiling source: {file_path}")
+    
+    # STEP 1.5: VALIDATE BREAK/CONTINUE
+    try:
+        validate_break_continue(full_source)
+    except EnsoCompileError:
+        raise  # Re-raise our custom errors
     
     # STEP 2: PARSE BUNDLED CODE
     # Use Earley parser instead of LALR to handle grammar ambiguities
