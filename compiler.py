@@ -17,6 +17,85 @@ def debug_log(message):
         print(f"\033[94mDEBUG:\033[0m {message}", file=sys.stderr)
 
 # ==========================================
+# ERROR HANDLING
+# ==========================================
+class EnsoCompileError(Exception):
+    """Custom exception for Ensō compilation errors with line numbers and hints."""
+    def __init__(self, message, line_number=None, column=None, context=None, suggestion=None):
+        self.message = message
+        self.line_number = line_number
+        self.column = column
+        self.context = context  # The offending line
+        self.suggestion = suggestion  # How to fix it
+        super().__init__(self._format_error())
+    
+    def _format_error(self):
+        """Format the error message with context and suggestion."""
+        lines = ["\n❌ Compilation Error"]
+        if self.line_number:
+            lines.append(f" at line {self.line_number}")
+            if self.column:
+                lines.append(f", column {self.column}")
+        lines.append(":\n")
+        
+        # Add the error message
+        lines.append(f"   {self.message}\n")
+        
+        # Add context if available
+        if self.context:
+            lines.append(f"   > {self.context}\n")
+        
+        # Add suggestion if available
+        if self.suggestion:
+            lines.append(f"   💡 {self.suggestion}\n")
+        
+        return "".join(lines)
+
+def get_line_context(source_code, line_number):
+    """Extract the line of code from source by line number (1-based)."""
+    if not source_code or line_number is None:
+        return None
+    source_lines = source_code.split('\n')
+    if 0 < line_number <= len(source_lines):
+        return source_lines[line_number - 1].strip()
+    return None
+
+def detect_common_error_patterns(source_code, error_msg):
+    """Detect common mistakes and return helpful suggestions."""
+    # Missing return type arrow
+    if "fn " in source_code and "->" not in source_code:
+        if re.search(r'fn\s+\w+\s*\([^)]*\)\s*{', source_code):
+            return "Functions need a return type: use '-> Type' before '{'", "fn_missing_return_type"
+    
+    # Missing instruction in ai fn
+    if "ai fn" in source_code and "instruction:" not in source_code:
+        return "AI functions need an instruction: use 'instruction: \"your prompt\"'", "ai_missing_instruction"
+    
+    # Missing model in ai fn
+    if "ai fn" in source_code and "model:" not in source_code:
+        return "AI functions need a model: use 'model: \"gpt-4o\"'", "ai_missing_model"
+    
+    # Unmatched braces
+    open_braces = source_code.count('{')
+    close_braces = source_code.count('}')
+    if open_braces != close_braces:
+        diff = open_braces - close_braces
+        brace = '{'
+        return f"Unmatched braces: found {open_braces} '{brace}' but {close_braces} " + "'{}'", "unmatched_braces"
+    
+    # Unmatched parentheses
+    open_parens = source_code.count('(')
+    close_parens = source_code.count(')')
+    if open_parens != close_parens:
+        return f"Unmatched parentheses: found {open_parens} '(' but {close_parens} ')'", "unmatched_parens"
+    
+    # Missing semicolons after statements
+    if re.search(r'(let|print|return|assert)\s+.+[^;}\n]\s*\n', source_code):
+        return "Statements should end with ';'", "missing_semicolon"
+    
+    return None, None
+
+# ==========================================
 # 0. THE BUNDLER (New Feature)
 # ==========================================
 def bundle(file_path, visited=None):
@@ -954,13 +1033,59 @@ def compile_source(file_path, source_code=None):
     
     # STEP 2: PARSE BUNDLED CODE
     # Use Earley parser instead of LALR to handle grammar ambiguities
-    # (e.g., distinguishing between "expr { field: value }" in struct init
-    # vs "expr { statements }" in control flow)
-    parser = Lark(enso_grammar, parser='earley')
-    tree = parser.parse(full_source)
-    # Apply transformer to the parse tree
-    transformer = EnsoTransformer()
-    return transformer.transform(tree)
+    try:
+        parser = Lark(enso_grammar, parser='earley')
+        tree = parser.parse(full_source)
+    except Exception as e:
+        # Extract error information from Lark exception
+        error_msg = str(e)
+        line_number = None
+        column = None
+        
+        # Try to extract line/column from error message
+        # Lark typically reports: "Error trying to process rule \"...\": ... expected ... at line X column Y"
+        match = re.search(r'line (\d+) col (\d+)', error_msg)
+        if match:
+            line_number = int(match.group(1))
+            column = int(match.group(2))
+        
+        # Get line context
+        context = get_line_context(full_source, line_number) if line_number else None
+        
+        # Try to detect common patterns
+        suggestion_text, error_type = detect_common_error_patterns(full_source, error_msg)
+        
+        # If no specific pattern matched, provide generic hint
+        if not suggestion_text:
+            suggestion_text = "Check syntax around this line"
+        
+        raise EnsoCompileError(
+            message="Syntax error",
+            line_number=line_number,
+            column=column,
+            context=context,
+            suggestion=suggestion_text
+        )
+    
+    # STEP 3: TRANSFORM
+    try:
+        transformer = EnsoTransformer()
+        return transformer.transform(tree)
+    except EnsoCompileError:
+        raise  # Re-raise our custom errors
+    except ValueError as e:
+        # Handle semantic errors (e.g., undefined variables in prompts)
+        error_msg = str(e)
+        raise EnsoCompileError(
+            message=error_msg,
+            suggestion="Check variable names and function parameters"
+        )
+    except Exception as e:
+        # Catch any other transformation errors
+        raise EnsoCompileError(
+            message=f"Transformation error: {str(e)}",
+            suggestion="Check syntax and types"
+        )
 
 def analyze_source(source_code):
     parser = Lark(enso_grammar, parser='earley')
