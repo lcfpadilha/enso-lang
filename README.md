@@ -367,9 +367,10 @@ CALL BREAKDOWN:
 
 ### VS Code
 
-Enso files (`.enso`) have full syntax highlighting support in VS Code.
+Enso files (`.enso`) have full syntax highlighting support and icons in VS Code.
 
 **Installation:**
+1. Go to `enso-vscode` folder and run `vsce package` (this will generate `enso-language-support-0.1.0.vsix` file)
 1. Open VS Code **Extensions** panel (`Ctrl+Shift+X`)
 2. Click the menu button (⋯) → **"Install from VSIX..."**
 3. Navigate to `enso-vscode/enso-language-support-0.1.0.vsix` in the project root
