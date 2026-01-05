@@ -1,23 +1,38 @@
 {
   "gpt-4o": {
     "type": "openai",
-    "cost_in": 2.5,
-    "cost_out": 10.0
+    "cost_in": 5.0,
+    "cost_out": 15.0
   },
-  "gemini-flash-latest": {
+  "gpt-4o-mini": {
+    "type": "openai",
+    "cost_in": 0.15,
+    "cost_out": 0.60
+  },
+  "gpt-4-turbo": {
+    "type": "openai",
+    "cost_in": 10.0,
+    "cost_out": 30.0
+  },
+  "gemini-2.5-flash": {
     "type": "gemini",
-    "cost_in": 3.5,
-    "cost_out": 10.5
+    "cost_in": 75.0,
+    "cost_out": 300.0
   },
   "gemini-2.5-flash-lite": {
     "type": "gemini",
-    "cost_in": 3.5,
-    "cost_out": 10.5
+    "cost_in": 37.5,
+    "cost_out": 150.0
   },
-  "gemini-3-lite": {
+  "gemini-2.0-flash": {
     "type": "gemini",
-    "cost_in": 3.5,
-    "cost_out": 10.5
+    "cost_in": 75.0,
+    "cost_out": 300.0
+  },
+  "gemini-flash-latest": {
+    "type": "gemini",
+    "cost_in": 75.0,
+    "cost_out": 300.0
   },
   "llama-3-local": {
     "type": "local",

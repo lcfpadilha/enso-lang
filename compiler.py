@@ -625,16 +625,26 @@ class EnsoAgent:
                 print(f"  \033[93m[Mock]\033[0m Serving response for '{self.name}'", file=sys.stderr)
                 mocked_value = MOCKS[self.name]
                 
-                # Track mock response in analysis
+                # Calculate cost even for mocks (for analysis purposes)
+                # Estimate tokens: approximately 1 token per 3.5 characters (more accurate than 1:4)
+                # This accounts for system prompt, instruction, and input
+                mock_str = str(mocked_value) if mocked_value else ""
+                
+                # Token estimation: in = system_instruction + instruction + input_text
+                in_tok = int((len(self.system_instruction or "") + len(self.instruction)) / 3.5 + 256)  # 256 token buffer for input
+                out_tok = int(len(mock_str) / 3.5 + 256)  # mock response + buffer
+                cost = (in_tok / 1e6 * self.spec.get('cost_in', 0)) + (out_tok / 1e6 * self.spec.get('cost_out', 0))
+                
+                # Track mock response in analysis with calculated cost
                 if _ANALYSIS_RESULTS is not None:
                     _ANALYSIS_RESULTS["ai_calls"].append({
                         "function": self.name,
                         "model": self.model,
-                        "cost": 0.0,
+                        "cost": cost,
                         "source": "mock"
                     })
                 
-                return Ok(Probabilistic(value=mocked_value, confidence=1.0, cost=0.0, model_used="MOCK"))
+                return Ok(Probabilistic(value=mocked_value, confidence=1.0, cost=cost, model_used="MOCK"))
 
             # Validate configuration
             if not self.model:
@@ -729,8 +739,11 @@ class EnsoAgent:
             
             # Parse response
             clean_json = self._clean_json(raw_json)
-            in_tok = len(self.instruction)//4 + len(input_text)//4
-            out_tok = len(clean_json)//4
+            # Token estimation: approximately 1 token per 3.5 characters (more accurate than 1:4)
+            # This accounts for actual API response sizes
+            system_prompt_len = len(self.system_instruction or "")
+            in_tok = int((system_prompt_len + len(self.instruction) + len(input_text)) / 3.5)
+            out_tok = int(len(clean_json) / 3.5)
             cost = (in_tok/1e6 * self.spec.get('cost_in', 0)) + (out_tok/1e6 * self.spec.get('cost_out', 0))
 
             # Try to parse JSON
