@@ -1,33 +1,57 @@
-import sys
-import os
+"""
+Ensō Compiler - Main compilation and analysis entry points.
+
+This module provides the high-level API for compiling and analyzing Ensō source files:
+- compile_source(): Compile .enso files to executable Python
+- analyze_source(): Extract AI function signatures for introspection
+
+The actual implementation is split across the core/ package:
+- core.errors: Error handling and validation
+- core.bundler: Import resolution (inlines imported files)
+- core.grammar: Lark grammar definition
+- core.runtime: Runtime preamble generation
+- core.transformer: AST to Python transformation
+- core.introspection: Schema extraction for AI functions
+"""
+
 import re
-from lark import Lark, Transformer
+from lark import Lark
 
 # Import from the core package
 from core.errors import (
     EnsoCompileError,
     get_line_context,
-    process_escape_sequences,
     detect_common_error_patterns,
     validate_break_continue,
 )
 from core.bundler import bundle
 from core.grammar import enso_grammar
-from core.runtime import get_preamble
 from core.transformer import EnsoTransformer
 from core.introspection import SchemaExtractor
+
+# Re-export for backward compatibility
+__all__ = [
+    'compile_source',
+    'analyze_source',
+    'set_verbose',
+    'debug_log',
+    'EnsoCompileError',
+]
 
 # Global verbose flag
 _VERBOSE = False
 
+
 def set_verbose(value):
-    """Set the global verbose flag."""
+    """Set the global verbose flag for debug logging."""
     global _VERBOSE
     _VERBOSE = value
+
 
 def debug_log(message):
     """Log a debug message to stderr if verbose mode is enabled."""
     if _VERBOSE:
+        import sys
         print(f"\033[94mDEBUG:\033[0m {message}", file=sys.stderr)
 
 # ==========================================
@@ -38,6 +62,19 @@ def debug_log(message):
 # by core/runtime/get_preamble().
 
 def compile_source(file_path, source_code=None):
+    """
+    Compile Ensō source code to executable Python.
+    
+    Args:
+        file_path: Path to the .enso file (used for import resolution)
+        source_code: Optional source code string (if None, reads from file_path)
+    
+    Returns:
+        str: Compiled Python code ready for execution
+    
+    Raises:
+        EnsoCompileError: If compilation fails (syntax error, undefined variables, etc.)
+    """
     # STEP 1: BUNDLE IMPORTS
     if source_code is None:
         full_source = bundle(file_path)
@@ -109,9 +146,21 @@ def compile_source(file_path, source_code=None):
             suggestion="Check syntax and types"
         )
 
+
 def analyze_source(source_code):
+    """
+    Extract AI function signatures from Ensō source code.
+    
+    Args:
+        source_code: Ensō source code string
+    
+    Returns:
+        list: List of function signature dicts with name, args, and return type
+    """
     parser = Lark(enso_grammar, parser='earley')
     tree = parser.parse(source_code)
-    transformer = SchemaExtractor()
-    try: return transformer.transform(tree)
-    except Exception: return []
+    extractor = SchemaExtractor()
+    try:
+        return extractor.transform(tree)
+    except Exception:
+        return []
