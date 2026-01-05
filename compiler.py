@@ -61,24 +61,20 @@ def get_line_context(source_code, line_number):
     return None
 
 def process_escape_sequences(string_token):
-    """Process escape sequences in a string token.
-    Handles: \\n (newline), \\\" (quote), \\\\ (backslash), etc.
-    Input: "hello\\nworld" (with quotes)
-    Output: "hello\nworld" (with quotes, escape processed)
+    """Process escape sequences in a string token for Python output.
+    
+    This function takes an Ensō string with escape sequences and converts it
+    to a Python-valid string literal that preserves those escape sequences.
+    
+    Input (from Ensō parser): '"hello\\nworld"' (with quotes, \\n is two chars)
+    Output (for Python code): '"hello\\nworld"' (Python will interpret \\n as newline)
+    
+    The key insight: We want the Python source code to contain \\n so that when
+    Python parses it, it becomes a newline. We do NOT process escapes ourselves.
     """
-    # Remove quotes
-    content = string_token[1:-1]
-    
-    # Process escape sequences
-    # \n -> newline, \" -> quote, \\ -> backslash, \t -> tab, \r -> carriage return
-    content = content.replace('\\n', '\n')
-    content = content.replace('\\t', '\t')
-    content = content.replace('\\r', '\r')
-    content = content.replace('\\"', '"')
-    content = content.replace('\\\\', '\\')
-    
-    # Re-add quotes and return
-    return '"' + content + '"'
+    # Just return the token as-is - the quotes and escapes are already correct
+    # for Python to parse properly when written to a Python file
+    return str(string_token)
 
 def detect_common_error_patterns(source_code, error_msg):
     """Detect common mistakes and return helpful suggestions."""
@@ -961,7 +957,11 @@ def {name}({arg_str}):
         # Post-process for string concatenation with type coercion
         # If we have something like: "string" + variable
         # Convert to: "string" + str(variable)
-        result = re.sub(r'("(?:[^"\\]|\\.)*")\s*\+\s*(?!str\()(\w+)', r'\1 + str(\2)', result)
+        # BUT: Don't wrap:
+        #   - property access (e.g., p.name or candidate.name) - followed by dot
+        #   - function calls (e.g., get_value()) - followed by paren
+        # Use (?![\w.(\[]）to prevent matching if followed by word char, dot, paren, or bracket
+        result = re.sub(r'("(?:[^"\\]|\\.)*")\s*\+\s*(?!str\()(\w+)(?![\w.(\[])', r'\1 + str(\2)', result)
         
         return result
 
@@ -1142,10 +1142,16 @@ if not '{func_name}_agent' in globals():
             is_right_string = '"' in right
             
             # If one side is a string and the other isn't, wrap non-string with str()
+            # BUT: Don't wrap property access (contains dots) - these already return values
+            # e.g., "text" + obj.prop should be "text" + obj.prop, not "text" + str(obj).prop
             if is_left_string and not is_right_string:
-                right = f"str({right})"
+                # Only wrap if right doesn't contain a dot (property access)
+                if '.' not in right:
+                    right = f"str({right})"
             elif is_right_string and not is_left_string:
-                left = f"str({left})"
+                # Only wrap if left doesn't contain a dot (property access)
+                if '.' not in left:
+                    left = f"str({left})"
             
             return f"{left} {op} {right}"
         return f"{args[0]} {args[1]} {args[2]}"
