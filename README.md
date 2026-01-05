@@ -95,6 +95,33 @@ Each example includes:
 
 ---
 
+## 🔄 Python Comparison Examples
+
+Want to see the ROI? The **`python-comparison-examples/`** folder contains production examples paired with equivalent Python implementations, showing the dramatic difference in complexity.
+
+### Resume-to-Job Match
+Compare how Ensō and Python handle the same task:
+- **Ensō**: 35 lines of clean, declarative code
+- **Python**: 203 lines of boilerplate, error handling, and API setup
+
+**See the side-by-side comparison:**
+```bash
+enso run python-comparison-examples/resume-job-match/main.enso
+cat python-comparison-examples/resume-job-match/COMPARISON.md
+```
+
+| Metric | Ensō | Python | Difference |
+|--------|------|--------|-----------|
+| Lines of Code | 35 | 203 | **6x shorter** |
+| Dev Time | ~2 min | ~15 min | **7x faster** |
+| Error Handling | Built-in | Manual (50+ lines) | **Automatic** |
+| Cost Tracking | Automatic | Manual | **Zero setup** |
+| Retry Logic | Automatic | 20+ lines | **Built-in** |
+
+👉 **[Python Comparison Examples](python-comparison-examples/README.md)** – Full breakdown with metrics and insights.
+
+---
+
 ## Why Ensō?
 
 ### 1. Type-Safe Intelligence
@@ -414,7 +441,7 @@ These features are designed but deferred for post-MVP iterations:
 
 ### Developer Experience
 - [ ] **SDK Generation** – Generate TypeScript/Go SDKs from Ensō definitions
-- [ ] **Observability** – Built-in tracing, cost reporting, analytics
+- [x] **Observability** – Built-in tracing, cost reporting, analytics
 - [ ] **Local Development** – Mock LLM responses with recorded interactions
 - [ ] **Hot Reload** – Modify Ensō files and restart without recompiling
 

@@ -1,0 +1,41 @@
+// ========================================
+// EXAMPLE: Resume-to-Job-Match (Ensō Version)
+// Focus: Simplicity & Developer Experience
+// ========================================
+// This example shows how to match a resume against a job description
+// and get a compatibility score with reasoning.
+//
+// Compile time: ~1 minute to write
+// Runtime: ~1-2 seconds with API calls
+// Cost: ~$0.01-0.03 per evaluation
+//
+
+struct MatchResult {
+    match_score: Int,
+    verdict: Enum<"Strong Match", "Good Match", "Fair Match", "Poor Match">,
+    key_strengths: List<String>,
+    key_gaps: List<String>,
+    recommendation: String
+}
+
+ai fn match_resume_to_job(resume: String, job_description: String) -> Result<MatchResult, AIError> {
+    instruction: "You are a hiring manager evaluating candidate fit.\n\nResume:\n{resume}\n\nJob Description:\n{job_description}\n\nAnalyze how well this candidate matches the role. Return a match score (0-100), verdict, top 3 strengths, top 3 gaps, and a recommendation.",
+    model: "gpt-4o-mini"
+}
+
+fn main() {
+    let sample_resume = "John Doe. 8 years of software engineering experience. Expert in Python, Go, Kubernetes. Led team of 5 engineers. Built distributed payment systems handling 1M+ transactions/day.";
+    
+    let sample_job = "Senior Backend Engineer - fintech startup. 5-10 years exp required. Must know: Python, Go, distributed systems, SQL. Will lead backend team. Salary: $200-250k.";
+    
+    match match_resume_to_job(sample_resume, sample_job) {
+        Ok(result) => {
+            print("Match Score: " + result.match_score);
+            print("Verdict: " + result.verdict);
+            print("Recommendation: " + result.recommendation);
+        },
+        Err(error) => {
+            print("Error: " + error.message);
+        }
+    }
+}
