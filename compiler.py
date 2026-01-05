@@ -60,6 +60,26 @@ def get_line_context(source_code, line_number):
         return source_lines[line_number - 1].strip()
     return None
 
+def process_escape_sequences(string_token):
+    """Process escape sequences in a string token.
+    Handles: \\n (newline), \\\" (quote), \\\\ (backslash), etc.
+    Input: "hello\\nworld" (with quotes)
+    Output: "hello\nworld" (with quotes, escape processed)
+    """
+    # Remove quotes
+    content = string_token[1:-1]
+    
+    # Process escape sequences
+    # \n -> newline, \" -> quote, \\ -> backslash, \t -> tab, \r -> carriage return
+    content = content.replace('\\n', '\n')
+    content = content.replace('\\t', '\t')
+    content = content.replace('\\r', '\r')
+    content = content.replace('\\"', '"')
+    content = content.replace('\\\\', '\\')
+    
+    # Re-add quotes and return
+    return '"' + content + '"'
+
 def detect_common_error_patterns(source_code, error_msg):
     """Detect common mistakes and return helpful suggestions."""
     # Missing return type arrow
@@ -800,7 +820,15 @@ def {name}({arg_str}):
 
     def expr(self, args):
         # Join parts of an expression into a single Python expression string
-        return " ".join(args)
+        # Handle string concatenation with automatic type conversion
+        result = " ".join(args)
+        
+        # Post-process for string concatenation with type coercion
+        # If we have something like: "string" + variable
+        # Convert to: "string" + str(variable)
+        result = re.sub(r'("(?:[^"\\]|\\.)*")\s*\+\s*(?!str\()(\w+)', r'\1 + str(\2)', result)
+        
+        return result
 
     def term(self, args):
         return args[0] if args else ""
@@ -961,10 +989,29 @@ if not '{func_name}_agent' in globals():
 
     def struct_init(self, args): return f"{args[0]}({', '.join(args[1:])})"
     def field_init(self, args): return f"{args[0]}={args[1]}"
-    def binary_expr(self, args): return f"{args[0]} {args[1]} {args[2]}"
+    def binary_expr(self, args):
+        # Handle string concatenation with automatic type conversion
+        # If operator is '+' and either operand is a string, auto-convert the other
+        op = args[1].strip()
+        if op == '+':
+            left = str(args[0])
+            right = str(args[2])
+            # Check if either side is a string literal (contains quotes)
+            is_left_string = '"' in left
+            is_right_string = '"' in right
+            
+            # If one side is a string and the other isn't, wrap non-string with str()
+            if is_left_string and not is_right_string:
+                right = f"str({right})"
+            elif is_right_string and not is_left_string:
+                left = f"str({left})"
+            
+            return f"{left} {op} {right}"
+        return f"{args[0]} {args[1]} {args[2]}"
     def NAME(self, t): return str(t)
     def TYPE_NAME(self, t): return str(t)
-    def STRING(self, t): return str(t)
+    def STRING(self, t): return process_escape_sequences(str(t))
+    def STRING_WITH_VARS(self, t): return process_escape_sequences(str(t))
     def NUMBER(self, t): return str(t)
     def CONFIG_KEY(self, t): return str(t)
     def OPERATOR(self, t): return str(t)
