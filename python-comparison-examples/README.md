@@ -1,25 +1,30 @@
 # Python Comparison Examples
 
-This folder contains **production-ready Ensō examples paired with equivalent Python implementations**. Each example demonstrates the dramatic difference in code complexity, development time, and maintainability between Ensō and traditional Python.
+**Ensō vs Python: See the difference.**
 
-## 📊 Structure
+This folder contains production-ready Ensō examples paired with equivalent Python implementations, demonstrating the dramatic reduction in code complexity.
 
-Each example has its own folder containing:
-- **`main.enso`** – Clean, declarative Ensō implementation
-- **`main.py`** – Equivalent Python implementation with all boilerplate
-- **`COMPARISON.md`** – Side-by-side code analysis and metrics
+---
 
 ## 🎯 Resume-to-Job Match
 
-The flagship example demonstrating Ensō's value proposition.
-
-### What It Does
 Match a resume against a job description and get a compatibility score with reasoning.
 
-### Run the Ensō Version
+### Files
+
+| File | Lines | Description |
+|------|-------|-------------|
+| [resume_job_match.enso](resume_job_match.enso) | 35 | Clean, declarative Ensō |
+| [resume_job_match.py](resume_job_match.py) | 203 | Equivalent Python with all boilerplate |
+
+### Run It
 
 ```bash
-enso run python-comparison-examples/resume-job-match/main.enso
+# Ensō version
+enso run python-comparison-examples/resume_job_match.enso
+
+# Python version (requires OPENAI_API_KEY)
+python python-comparison-examples/resume_job_match.py
 ```
 
 **Output:**
@@ -29,63 +34,119 @@ Verdict: Strong Match
 Recommendation: Hire immediately - exceptional fit for the role
 ```
 
-### Key Metrics
+---
+
+## 📊 Metrics
 
 | Metric | Ensō | Python |
 |--------|------|--------|
 | **Lines of Code** | 35 | 203 |
-| **Development Time** | ~2 min | ~15 min |
+| **Time to Write** | ~2 min | ~15 min |
+| **Boilerplate** | ~5 lines | ~100 lines |
 | **Error Handling** | Built-in | Manual (50+ lines) |
-| **Cost Tracking** | Automatic | Manual + functions |
-| **Retry Logic** | Built-in exponential backoff | 20+ lines to implement |
-| **Type Safety** | Compile-time checks | Runtime only |
+| **Cost Tracking** | Automatic | Manual setup |
+| **Retry Logic** | Built-in | 20+ lines |
+| **Type Safety** | Compile-time | Runtime only |
 
-### What You'll Learn
+---
 
-1. **Ensō version** – How to declare AI logic cleanly
-2. **Python version** – All the boilerplate you avoid with Ensō
-3. **Comparison** – Metrics, code analysis, and ROI breakdown
+## 🔍 Code Comparison
 
-### See the Comparison
+### API & Types Setup
 
-```bash
-cat python-comparison-examples/resume-job-match/COMPARISON.md
+**Ensō** (3 lines):
+```enso
+ai fn match_resume_to_job(resume: String, job_description: String) -> Result<MatchResult, AIError> {
+    instruction: "...",
+    model: "gemini-2.0-flash"
+}
+```
+
+**Python** (40+ lines):
+```python
+openai.api_key = os.getenv("OPENAI_API_KEY")
+if not openai.api_key:
+    raise ValueError("OPENAI_API_KEY not set")
+
+class VerdictEnum(str, Enum):
+    STRONG_MATCH = "Strong Match"
+    # ... more enum values
+
+@dataclass
+class MatchResult:
+    match_score: int
+    verdict: VerdictEnum
+    key_strengths: list[str]
+    key_gaps: list[str]
+    recommendation: str
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "MatchResult":
+        # ... parsing logic with error handling
+```
+
+### Error Handling
+
+**Ensō** (4 lines):
+```enso
+match match_resume_to_job(sample_resume, sample_job) {
+    Ok(result) => print(result.recommendation),
+    Err(error) => print(error.message)
+}
+```
+
+**Python** (50+ lines):
+```python
+for attempt in range(max_retries):
+    try:
+        response = openai.ChatCompletion.create(...)
+        result_data = json.loads(response_text)
+        return MatchResult.from_dict(result_data)
+    except openai.error.APIError as e:
+        if attempt < max_retries - 1:
+            time.sleep(2 ** attempt)
+            continue
+        raise APIError(f"Failed after {max_retries} retries")
+    except openai.error.Timeout:
+        # ... more exception handling
+    except openai.error.AuthenticationError:
+        # ... more exception handling
+```
+
+### Cost Tracking
+
+**Ensō** (0 lines - automatic):
+```enso
+print(result.cost);  // Built into every response
+```
+
+**Python** (15+ lines):
+```python
+def estimate_tokens(text: str) -> int:
+    return len(text) // 4
+
+def calculate_cost(input_text: str, output_text: str, model: str) -> float:
+    pricing = OPENAI_PRICING.get(model)
+    input_tokens = estimate_tokens(input_text)
+    output_tokens = estimate_tokens(output_text)
+    return (input_tokens * pricing["input"]) + (output_tokens * pricing["output"])
 ```
 
 ---
 
-## 🔄 How Comparisons Work
+## 💡 Adapt for Your Use Case
 
-Each comparison shows:
+```bash
+# 1. Copy the template
+cp python-comparison-examples/resume_job_match.enso my-example.enso
 
-1. **API & Type Setup** – How much code just to initialize the client
-2. **Error Handling & Retry Logic** – The complexity of production-grade error handling
-3. **Cost Tracking** – Manual cost calculation vs automatic
-4. **Main Logic** – The core business logic (similar in both, but context is different)
-
-**The Takeaway:** Ensō lets you focus on the problem. Python forces you to focus on the plumbing.
-
----
-
-## 🚀 Future Comparisons
-
-Planned additions:
-- [ ] **Invoice Extraction** – Document processing with cost comparison
-- [ ] **Content Moderation** – Batch processing pipeline
-- [ ] **LLM Routing** – Multi-model selection logic
-- [ ] **Concurrent Batch Jobs** – Parallel processing with error collection
-
----
-
-## 💡 How to Adapt These Examples
-
-1. Copy the folder: `cp -r python-comparison-examples/resume-job-match my-example`
-2. Modify `main.enso` with your logic
-3. Run it: `enso run my-example/main.enso`
-4. Use `python-comparison-examples/resume-job-match/main.py` as reference if you need to understand the Python equivalent
+# 2. Edit with your logic
+# 3. Run it
+enso run my-example.enso
+```
 
 ---
 
 ## Questions?
 
-See the main [README.md](../README.md) for syntax, CLI commands, and feature overview.
+See the main [README.md](../README.md) for syntax and CLI commands.

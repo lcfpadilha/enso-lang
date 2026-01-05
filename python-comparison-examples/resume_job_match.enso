@@ -7,7 +7,7 @@
 //
 // Compile time: ~1 minute to write
 // Runtime: ~1-2 seconds with API calls
-// Cost: ~$0.01-0.03 per evaluation
+// Cost: ~$0.001-0.01 per evaluation (Gemini)
 //
 
 struct MatchResult {
@@ -20,7 +20,7 @@ struct MatchResult {
 
 ai fn match_resume_to_job(resume: String, job_description: String) -> Result<MatchResult, AIError> {
     instruction: "You are a hiring manager evaluating candidate fit.\n\nResume:\n{resume}\n\nJob Description:\n{job_description}\n\nAnalyze how well this candidate matches the role. Return a match score (0-100), verdict, top 3 strengths, top 3 gaps, and a recommendation.",
-    model: "gpt-4o-mini"
+    model: "gemini-flash-latest"
 }
 
 fn main() {
@@ -30,9 +30,9 @@ fn main() {
     
     match match_resume_to_job(sample_resume, sample_job) {
         Ok(result) => {
-            print("Match Score: " + result.match_score);
-            print("Verdict: " + result.verdict);
-            print("Recommendation: " + result.recommendation);
+            print("Match Score: " + str(result.value.match_score));
+            print("Verdict: " + result.value.verdict);
+            print("Recommendation: " + result.value.recommendation);
         },
         Err(error) => {
             print("Error: " + error.message);

@@ -7,16 +7,20 @@ Notice: 3x more code, more boilerplate, more error handling to write manually.
 
 import os
 import json
+import re
 from typing import Optional
 from dataclasses import dataclass
 from enum import Enum
-import openai
+import requests
 import time
 
 # ========== Setup API Client ==========
-openai.api_key = os.getenv("OPENAI_API_KEY")
-if not openai.api_key:
-    raise ValueError("OPENAI_API_KEY not set. Get key at https://platform.openai.com/api-keys")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise ValueError("GEMINI_API_KEY not set. Get key at https://aistudio.google.com/app/apikey")
+
+GEMINI_MODEL = "gemini-flash-latest"
+GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 
 # ========== Type Definitions ==========
 class VerdictEnum(str, Enum):
@@ -55,10 +59,10 @@ class APIError(Exception):
         super().__init__(f"API Error ({status_code}): {message}")
 
 # ========== Cost Tracking ==========
-OPENAI_PRICING = {
-    "gpt-4o-mini": {
-        "input": 0.15 / 1_000_000,   # $0.15 per 1M input tokens
-        "output": 0.60 / 1_000_000   # $0.60 per 1M output tokens
+GEMINI_PRICING = {
+    "gemini-2.0-flash": {
+        "input": 0.075 / 1_000_000,   # $0.075 per 1M input tokens
+        "output": 0.30 / 1_000_000    # $0.30 per 1M output tokens
     }
 }
 
@@ -66,14 +70,25 @@ def estimate_tokens(text: str) -> int:
     """Rough estimate: 4 chars = 1 token"""
     return len(text) // 4
 
-def calculate_cost(input_text: str, output_text: str, model: str = "gpt-4o-mini") -> float:
+def calculate_cost(input_text: str, output_text: str, model: str = "gemini-2.0-flash") -> float:
     """Calculate API call cost"""
-    pricing = OPENAI_PRICING.get(model, OPENAI_PRICING["gpt-4o-mini"])
+    pricing = GEMINI_PRICING.get(model, GEMINI_PRICING["gemini-2.0-flash"])
     input_tokens = estimate_tokens(input_text)
     output_tokens = estimate_tokens(output_text)
     
     cost = (input_tokens * pricing["input"]) + (output_tokens * pricing["output"])
     return cost
+
+def clean_json_response(text: str) -> str:
+    """Strip markdown code blocks from response"""
+    text = text.strip()
+    if text.startswith("```json"):
+        text = text[7:]
+    elif text.startswith("```"):
+        text = text[3:]
+    if text.endswith("```"):
+        text = text[:-3]
+    return text.strip()
 
 # ========== API Call with Retries & Error Handling ==========
 def match_resume_to_job(resume: str, job_description: str, max_retries: int = 3) -> MatchResult:
@@ -106,45 +121,47 @@ IMPORTANT: Respond with valid JSON only, no extra text. Format:
     # Retry loop for transient failures
     for attempt in range(max_retries):
         try:
-            # Call OpenAI API
-            response = openai.ChatCompletion.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": system_instruction},
-                    {"role": "user", "content": instruction}
-                ],
-                temperature=0.7,
+            # Call Gemini API
+            response = requests.post(
+                GEMINI_API_URL,
+                params={"key": GEMINI_API_KEY},
+                headers={"Content-Type": "application/json"},
+                json={
+                    "system_instruction": {"parts": [{"text": system_instruction}]},
+                    "contents": [{"parts": [{"text": instruction}]}],
+                    "generationConfig": {"temperature": 0.7}
+                },
                 timeout=30
             )
             
-            # Extract response text
-            response_text = response["choices"][0]["message"]["content"]
+            if response.status_code == 401:
+                raise APIError("Invalid API key. Check GEMINI_API_KEY", 401)
+            elif response.status_code == 429:
+                raise APIError("Rate limit exceeded. Wait and retry", 429)
+            elif response.status_code != 200:
+                raise APIError(f"API returned status {response.status_code}: {response.text}", response.status_code)
             
-            # Parse JSON response
+            # Extract response text
+            result = response.json()
+            response_text = result["candidates"][0]["content"]["parts"][0]["text"]
+            
+            # Parse JSON response (strip markdown if present)
             try:
-                result_data = json.loads(response_text)
+                cleaned = clean_json_response(response_text)
+                result_data = json.loads(cleaned)
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON response from API: {response_text}") from e
             
             # Convert to typed result
-            result = MatchResult.from_dict(result_data)
+            match_result = MatchResult.from_dict(result_data)
             
             # Calculate and track cost
-            cost = calculate_cost(instruction, response_text, "gpt-4o-mini")
+            cost = calculate_cost(instruction, response_text, GEMINI_MODEL)
             print(f"INFO: API call cost: ${cost:.6f}")
             
-            return result
+            return match_result
             
-        except openai.error.APIError as e:
-            if attempt < max_retries - 1:
-                wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
-                print(f"API Error, retrying in {wait_time}s... ({attempt + 1}/{max_retries})")
-                time.sleep(wait_time)
-                continue
-            else:
-                raise APIError(f"API failed after {max_retries} retries: {str(e)}", 500)
-        
-        except openai.error.Timeout:
+        except requests.exceptions.Timeout:
             if attempt < max_retries - 1:
                 print(f"Timeout, retrying... ({attempt + 1}/{max_retries})")
                 time.sleep(2 ** attempt)
@@ -152,11 +169,14 @@ IMPORTANT: Respond with valid JSON only, no extra text. Format:
             else:
                 raise APIError("Request timed out after 30 seconds", 408)
         
-        except openai.error.AuthenticationError:
-            raise APIError("Invalid API key. Check OPENAI_API_KEY", 401)
-        
-        except openai.error.RateLimitError:
-            raise APIError("Rate limit exceeded. Upgrade your plan or wait", 429)
+        except requests.exceptions.RequestException as e:
+            if attempt < max_retries - 1:
+                wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                print(f"API Error, retrying in {wait_time}s... ({attempt + 1}/{max_retries})")
+                time.sleep(wait_time)
+                continue
+            else:
+                raise APIError(f"API failed after {max_retries} retries: {str(e)}", 500)
 
 # ========== Main ==========
 def main():
@@ -167,7 +187,7 @@ def main():
     try:
         result = match_resume_to_job(sample_resume, sample_job)
         print(f"Match Score: {result.match_score}")
-        print(f"Verdict: {result.verdict}")
+        print(f"Verdict: {result.verdict.value}")
         print(f"Recommendation: {result.recommendation}")
     except APIError as e:
         print(f"Error: {e}")
